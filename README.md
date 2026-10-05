@@ -57,3 +57,23 @@ APIキーや利用可能モデルはリポジトリへ保存しないでくだ�
 ## これはまだTinyFishと同じではない
 
 TinyFishの公開接続面にはCloud Browser、Stealth、Proxy、Browser Context Profile、Vault、capture、structured output、run lifecycleなどがあります。MiniFish v0.1はその中の「Agent loop + browser hand + run state + capture」の最小骨格だけを再現しています。
+
+
+## iPhoneから使う
+
+MiniFish v0.2では、iPhone自体でChromiumを動かすのではなく、remote runtime上のMiniFishをSafariから操縦する。
+
+最短の試験経路はGitHub Codespaces。
+
+1. このrepositoryをCodespaceで開く。
+2. `bash start_iphone.sh` を実行。
+3. forwardされた8000番ポートをprivateのまま開く。
+4. iPhone Safariから操縦席を開く。
+5. まずDEMOで `run_id → RUNNING → COMPLETED` を確認。
+6. `OPENAI_API_KEY` と `OPENAI_MODEL` をremote runtime側に設定するとAGENTモードが使える。
+
+詳細: `IPHONE_CODESPACES.md`
+
+TinyFishとの差分表: `TINYFISH_DECOMPOSITION.md`
+
+> APIキー、Cookie、ブラウザProfileはrepositoryへcommitしない。
