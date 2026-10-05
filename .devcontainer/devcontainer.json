@@ -1,0 +1,13 @@
+{
+  "name": "MiniFish v0.2",
+  "image": "mcr.microsoft.com/devcontainers/python:3.11",
+  "postCreateCommand": "pip install -r requirements.txt && python -m playwright install --with-deps chromium",
+  "forwardPorts": [8000],
+  "portsAttributes": {
+    "8000": {
+      "label": "MiniFish Control",
+      "onAutoForward": "notify",
+      "visibility": "private"
+    }
+  }
+}
