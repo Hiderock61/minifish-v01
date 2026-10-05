@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 import json
 import time
 
@@ -25,6 +25,7 @@ class MiniFishRunner:
         profile_path: str | None = None,
         capture_dir: str | None = None,
         log_path: str | None = None,
+        on_event: Callable[[RunState, Event], None] | None = None,
     ) -> None:
         self.planner = planner
         self.max_steps = max_steps
@@ -34,6 +35,7 @@ class MiniFishRunner:
         self.profile_path = profile_path
         self.capture_dir = capture_dir
         self.log_path = Path(log_path) if log_path else None
+        self.on_event = on_event
         self.guard = RunGuard()
 
     def run(self, goal: str, start_url: str = "about:blank", start_html: str | None = None) -> RunState:
@@ -93,6 +95,7 @@ class MiniFishRunner:
                         state.events.append(event)
                         state.status = "FAILED"
                         state.error = reason
+                        self._notify(state, event)
                         break
 
                     if action.type == "done":
@@ -124,6 +127,7 @@ class MiniFishRunner:
                         after_url=browser.current_url,
                     )
                     state.events.append(event)
+                    self._notify(state, event)
                     history.append(
                         {
                             "step": step,
@@ -149,6 +153,10 @@ class MiniFishRunner:
         state.ended_at = now_iso()
         self._save(state)
         return state
+
+    def _notify(self, state: RunState, event: Event) -> None:
+        if self.on_event:
+            self.on_event(state, event)
 
     def _save(self, state: RunState) -> None:
         if not self.log_path:
