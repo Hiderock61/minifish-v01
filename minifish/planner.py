@@ -78,8 +78,8 @@ ALLOWED ACTION SHAPES:
             input=[{"role": "user", "content": prompt}],
         )
         raw = response.output_text.strip()
-        if raw.startswith("~~~"):
-            raw = raw.strip("~")
+        if raw.startswith("```"):
+            raw = raw.strip("`")
             if raw.startswith("json"):
                 raw = raw[4:].lstrip()
         data = json.loads(raw)
