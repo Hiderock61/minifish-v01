@@ -38,8 +38,14 @@ class MiniFishRunner:
         self.on_event = on_event
         self.guard = RunGuard()
 
-    def run(self, goal: str, start_url: str = "about:blank", start_html: str | None = None) -> RunState:
-        state = RunState(goal=goal, start_url=start_url)
+    def run(
+        self,
+        goal: str,
+        start_url: str = "about:blank",
+        start_html: str | None = None,
+        run_id: str | None = None,
+    ) -> RunState:
+        state = RunState(goal=goal, start_url=start_url, **({"run_id": run_id} if run_id else {}))
         state.status = "RUNNING"
         started = time.monotonic()
         history: list[dict[str, Any]] = []
