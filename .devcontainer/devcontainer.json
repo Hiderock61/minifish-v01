@@ -1,12 +1,13 @@
 {
   "name": "MiniFish v0.2",
   "image": "mcr.microsoft.com/devcontainers/python:3.11",
-  "postCreateCommand": "pip install -r requirements.txt && python -m playwright install --with-deps chromium",
+  "postCreateCommand": "pip install -r requirements.txt && python -m playwright install --with-deps chromium && (nohup bash start_iphone.sh >/tmp/minifish.log 2>&1 &)",
+  "postStartCommand": "pgrep -f 'uvicorn cloud_api:app' >/dev/null || (nohup bash start_iphone.sh >/tmp/minifish.log 2>&1 &)",
   "forwardPorts": [8000],
   "portsAttributes": {
     "8000": {
       "label": "MiniFish Control",
-      "onAutoForward": "notify",
+      "onAutoForward": "openBrowser",
       "visibility": "private"
     }
   }
