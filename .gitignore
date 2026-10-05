@@ -1,0 +1,9 @@
+__pycache__/
+.pytest_cache/
+*.pyc
+.env
+run_logs/*.json
+run_logs/captures/
+run_logs/ai_captures/
+.venv/
+.DS_Store
