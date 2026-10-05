@@ -26,6 +26,7 @@ class MiniFishRunner:
         capture_dir: str | None = None,
         log_path: str | None = None,
         on_event: Callable[[RunState, Event], None] | None = None,
+        should_stop: Callable[[], bool] | None = None,
     ) -> None:
         self.planner = planner
         self.max_steps = max_steps
@@ -36,6 +37,7 @@ class MiniFishRunner:
         self.capture_dir = capture_dir
         self.log_path = Path(log_path) if log_path else None
         self.on_event = on_event
+        self.should_stop = should_stop
         self.guard = RunGuard()
 
     def run(
@@ -64,6 +66,10 @@ class MiniFishRunner:
                     browser.goto(start_url)
 
                 for step in range(1, self.max_steps + 1):
+                    if self.should_stop and self.should_stop():
+                        state.status = "CANCELLED"
+                        state.final_result = "cancelled by user"
+                        break
                     if time.monotonic() - started > self.max_duration_seconds:
                         raise TimeoutError("max_duration_seconds exceeded")
 
@@ -146,7 +152,7 @@ class MiniFishRunner:
                         }
                     )
 
-                    if state.status in ("COMPLETED", "FAILED"):
+                    if state.status in ("COMPLETED", "FAILED", "CANCELLED"):
                         break
                 else:
                     state.status = "FAILED"
