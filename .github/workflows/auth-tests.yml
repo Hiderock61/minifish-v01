@@ -1,0 +1,19 @@
+name: MiniFish Auth Tests
+on:
+  pull_request:
+  push:
+    branches: [feat/auth-gate-v01]
+jobs:
+  auth-tests:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+      - name: Test auth gate
+        run: PYTHONPATH=. pytest -q tests/test_auth.py
