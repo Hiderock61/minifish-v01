@@ -1,0 +1,79 @@
+name: MiniFish CW profile audit (read-only)
+
+on:
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  observe:
+    if: ${{ github.event.issue.number == 1 && github.event.issue.user.login == 'Hiderock61' && github.event.comment.body == '/minifish-cw-audit' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install MiniFish and Chromium
+        run: |
+          python -m pip install -r requirements.txt
+          python -m playwright install --with-deps chromium
+      - name: Observe one public CrowdWorks profile using MiniFish
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          from minifish import MiniFishRunner, ScriptedPlanner, Action
+          
+          url = "https://crowdworks.jp/public/employees/5523465"
+          runner = MiniFishRunner(
+              ScriptedPlanner([Action(type="done", result="Read-only opening view observed")]),
+              max_steps=1, max_duration_seconds=70, headless=True,
+              capture_dir="audit_captures", log_path="audit_state.json"
+          )
+          state = runner.run(
+              goal="Read-only CrowdWorks public profile 10-second view; do not click, fill, send, or submit anything.",
+              start_url=url
+          )
+          observation = state.events[0].observation if state.events else {}
+          text = observation.get("text_excerpt", "")
+          aria = observation.get("aria_snapshot", "")
+          report = (
+              "🐟 MiniFish read-only browser observation\n\n"
+              + f"STATUS: {state.status}\n"
+              + f"ERROR: {state.error or 'none'}\n"
+              + f"URL: {observation.get('url') or url}\n"
+              + f"TITLE: {observation.get('title') or 'unavailable'}\n"
+              + f"STEPS: {state.step_count}\n\n"
+              + "Raw visible text (first 3900 chars):\n\n"
+              + "```text\n" + text[:3900] + "\n```\n\n"
+              + "Accessibility (first 600 chars):\n\n"
+              + "```text\n" + aria[:600] + "\n```\n\n"
+              + "COMPLETION EVIDENCE: UNKNOWN unless specific contract/review records are observed."
+          )
+          Path("audit_report.md").write_text(report, encoding="utf-8")
+          print(report[:2500])
+          PY
+      - name: Attach MiniFish observation to issue #1
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if test -f audit_report.md; then
+            gh api repos/${{ github.repository }}/issues/1/comments -f body="$(cat audit_report.md)" || true
+          fi
+      - name: Save observation screenshots and state
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: minifish-cw-profile-01
+          path: |
+            audit_state.json
+            audit_captures/
+            audit_report.md
+          retention-days: 7
+          if-no-files-found: warn
