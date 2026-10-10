@@ -48,4 +48,4 @@ echo "3) In another Codespaces terminal: DISPLAY=$DISPLAY python auth_setup.py S
 echo "4) Log in to the visible Chromium browser; press ENTER in the terminal to verify/save"
 echo "5) Press Ctrl-C HERE to shut down the one-time desktop."
 echo "WARNING: This is a proof-of-concept login path, not a hardened password manager."
-exec websockify --web /usr/share/novnc "0.0.0.0:$WEB_PORT" "127.0.0.1:$RFB_PORT"
+websockify --web /usr/share/novnc "0.0.0.0:$WEB_PORT" "127.0.0.1:$RFB_PORT"
