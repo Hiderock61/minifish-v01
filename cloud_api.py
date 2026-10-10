@@ -10,6 +10,8 @@ import uuid
 from fastapi import BackgroundTasks, FastAPI, HTTPException
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field
+from starlette.concurrency import run_in_threadpool
+from minifish.note_conveyor import Article, mock_draft
 
 from minifish import Action, MiniFishRunner, OpenAIPlanner, ScriptedPlanner
 from minifish.auth import load_site, state_path, public_url
@@ -136,6 +138,26 @@ CONTROL_HTML = r"""
   </section>
 
   <section class="card">
+    <b>📝 フィッシュでノート｜下書き搬送 DEMO</b>
+    <p class="muted">無料の模擬編集画面でタイトル・本文を運びます。本物のnoteには投稿しません。</p>
+    <label for="noteTitle">記事タイトル</label>
+    <input id="noteTitle" placeholder="Z軸｜第17話">
+    <label for="noteBody">記事本文</label>
+    <textarea id="noteBody" placeholder="原稿を貼り付け"></textarea>
+    <label for="noteSeries">シリーズ</label>
+    <select id="noteSeries">
+      <option value="Z軸シリーズ">Z軸シリーズ</option>
+      <option value="じーぴーてえーシリーズ">じーぴーてえーシリーズ</option>
+      <option value="今日のプラグイン">今日のプラグイン</option>
+      <option value="">その他</option>
+    </select>
+    <label for="noteTags">タグ（カンマ区切り・省略可）</label>
+    <input id="noteTags" placeholder="小説, Z軸">
+    <button id="noteMockButton" style="width:100%;background:#7ea1ff;color:#071025;margin-top:12px">模擬下書き保存を試す</button>
+    <p id="noteMockResult" class="muted">未実行｜記事は公開されません。</p>
+  </section>
+
+  <section class="card">
     <div class="grid">
       <div class="metric"><b>RUN STATUS</b><span id="status">IDLE</span></div>
       <div class="metric"><b>STEP</b><span id="step">0</span></div>
@@ -259,6 +281,35 @@ stopButton.addEventListener('click', async () => {
   paint(data);
 });
 
+document.getElementById('noteMockButton').addEventListener('click', async () => {
+  const button = document.getElementById('noteMockButton');
+  const result = document.getElementById('noteMockResult');
+  const title = document.getElementById('noteTitle').value.trim();
+  const body = document.getElementById('noteBody').value;
+  const series = document.getElementById('noteSeries').value;
+  const tags = document.getElementById('noteTags').value.split(',').map(s => s.trim()).filter(Boolean);
+  if (!title || !body.trim()) {
+    result.textContent = 'タイトルと本文が必要です。';
+    return;
+  }
+  button.disabled = true;
+  result.textContent = '模擬Chromiumで下書きを保存中...';
+  try {
+    const response = await fetch('/api/note/mock', {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({title, body, series, tags})
+    });
+    const data = await response.json();
+    result.textContent = response.ok
+      ? '保存検査：' + data.status + ' / 記事ID ' + data.content_key
+      : '停止：' + (data.detail || 'unknown error');
+  } catch (error) {
+    result.textContent = '通信エラー。まだnoteへは何も送っていません。';
+  } finally {
+    button.disabled = false;
+  }
+});
+
 modeInput.addEventListener('change', async () => {
   if (modeInput.value !== 'agent') {
     document.getElementById('notice').textContent = '';
@@ -274,6 +325,30 @@ modeInput.addEventListener('change', async () => {
 </body>
 </html>
 """
+
+
+class NoteMockRequest(BaseModel):
+    title: str
+    body: str
+    series: str = ""
+    tags: list[str] = Field(default_factory=list)
+
+
+@app.post("/api/note/mock")
+async def note_mock(request: NoteMockRequest) -> dict[str, str]:
+    # Mock-only: never touches note.com and never stores user text in GitHub.
+    try:
+        article = Article.from_dict({
+            "title": request.title, "body": request.body,
+            "series": request.series, "tags": request.tags,
+            "destinations": ["note"], "visibility": "draft",
+        })
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    try:
+        return await run_in_threadpool(mock_draft, article)
+    except Exception:
+        raise HTTPException(status_code=503, detail="local Chromium mock failed") from None
 
 
 class RunRequest(BaseModel):
