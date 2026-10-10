@@ -57,7 +57,7 @@ POIKATSU_DEMO_HTML = r"""
 <label><input type="radio" name="q1" value="weekly1">週1回程度</label>
 </fieldset>
 <fieldset><legend>Q2. 同じ品質ならどちらを選びますか</legend>
-<label><input type="radio" name="q2" value="cheaper">価格が同じなら安い方</label>
+<label><input type="radio" name="q2" value="cheaper">安い方</label>
 <label><input type="radio" name="q2" value="expensive">高い方</label>
 </fieldset>
 <fieldset><legend>Q3. 今見ている広告への印象</legend>
@@ -322,7 +322,7 @@ def run_worker(run_id: str, request: RunRequest) -> None:
         # Only user-confirmed mock answers. Unknown Q3 stays untouched.
         planner = ScriptedPlanner([
             Action(type="click", role="radio", name="週8回以上", reason="mock Q1: existing answer candidate"),
-            Action(type="click", role="radio", name="価格が同じなら安い方", reason="mock Q2: existing answer candidate"),
+            Action(type="click", role="radio", name="安い方", reason="mock Q2: existing answer candidate"),
             Action(type="done", result="模擬回答2件を入力、未知のQ3は未回答、外部送信なし。HTMLキャプチャで選択状態を確認する", reason="dry-run only"),
         ])
         start_url = "about:blank"
