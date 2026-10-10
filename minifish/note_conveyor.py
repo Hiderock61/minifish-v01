@@ -107,7 +107,7 @@ def require_one_visible(page, selector: str):
 
 
 def write_draft(browser: PlaywrightBrowser, article: Article, sel: DraftSelectors,
-                site: SiteAuth | None = None) -> str:
+                site: SiteAuth | None = None, prepared_html: str | None = None) -> str:
     """Operate ONLY clearly configured draft controls; verify a saved indicator."""
     if "note" not in article.destinations:
         raise ValueError("note destination not selected")
@@ -122,9 +122,14 @@ def write_draft(browser: PlaywrightBrowser, article: Article, sel: DraftSelector
             reason = preflight_action(site, action)
             if reason:
                 raise ValueError(reason)
-    browser.goto(sel.editor_url)
+    if prepared_html is None:
+        browser.goto(sel.editor_url)
+    elif site:
+        raise ValueError("HTML mock cannot be used with live authenticated site")
     page = browser.page
     assert page is not None
+    if prepared_html is not None:
+        page.set_content(prepared_html)
     if site:
         try:
             site.validate_target(page.url)
@@ -141,9 +146,13 @@ def write_draft(browser: PlaywrightBrowser, article: Article, sel: DraftSelector
         raise RuntimeError("DRAFT_SAVE_BUTTON_UNVERIFIED")
     title.fill(article.title)
     body.fill(article.body)
-    if title.input_value() != article.title:
+    def content(loc):
+        # note's rich editor may use contenteditable instead of a textarea.
+        tag = loc.evaluate("(element) => element.tagName.toLowerCase()")
+        return loc.input_value() if tag in ("input", "textarea") else loc.inner_text()
+    if content(title) != article.title:
         raise RuntimeError("TITLE_NOT_ENTERED")
-    if body.input_value() != article.body:
+    if content(body) != article.body:
         raise RuntimeError("BODY_NOT_ENTERED")
     save.click(timeout=7000)
     try:
@@ -182,23 +191,9 @@ MOCK_SELECTORS = DraftSelectors(
 
 
 def mock_draft(article: Article) -> dict[str, str]:
-    # No account, no network, no AI credits. Exercise the real Chromium form path.
+    # No account, network, or paid AI. Reuse the same driver as the live route.
     with PlaywrightBrowser(headless=True, save_profile_on_close=False) as browser:
-        assert browser.page is not None
-        browser.page.set_content(MOCK_EDITOR_HTML)
-        # Same selector validation/filling/saving as live route, without navigation.
-        page = browser.page
-        title = require_one_visible(page, MOCK_SELECTORS.title)
-        body = require_one_visible(page, MOCK_SELECTORS.body)
-        save = require_one_visible(page, MOCK_SELECTORS.save)
-        if save.inner_text().strip() != MOCK_SELECTORS.save_label:
-            raise RuntimeError("DRAFT_SAVE_BUTTON_UNVERIFIED")
-        title.fill(article.title)
-        body.fill(article.body)
-        if title.input_value() != article.title or body.input_value() != article.body:
-            raise RuntimeError("CONTENT_MISMATCH")
-        save.click()
-        page.locator(MOCK_SELECTORS.saved_proof).wait_for(state="visible", timeout=5000)
+        write_draft(browser, article, MOCK_SELECTORS, prepared_html=MOCK_EDITOR_HTML)
     return {"status": "MOCK_DRAFT_VERIFIED", "content_key": article.content_key}
 
 
