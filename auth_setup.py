@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import argparse
 import os
-from pathlib import Path
+import time
 
 from minifish.auth import check_login, load_site, state_path
 from minifish.browser import PlaywrightBrowser
@@ -15,6 +15,8 @@ from minifish.browser import PlaywrightBrowser
 def main() -> int:
     p = argparse.ArgumentParser()
     p.add_argument("site_id")
+    p.add_argument("--auto", action="store_true", help="wait for successful visible login without terminal input")
+    p.add_argument("--timeout", type=int, default=300, help="seconds for --auto; default 300")
     p.add_argument("--config", default=os.getenv("MINIFISH_AUTH_CONFIG", ".minifish/auth_sites.json"))
     p.add_argument("--state-root", default=os.getenv("MINIFISH_AUTH_STATE_ROOT", ".minifish/sites"))
     args = p.parse_args()
@@ -27,7 +29,24 @@ def main() -> int:
     print(f"Opening registered site {site.site_id}. Sign in ONLY in the Chromium window.")
     with PlaywrightBrowser(headless=False, profile_path=str(profile), save_profile_on_close=False) as browser:
         browser.goto(site.check_url)
-        input("After finishing login and MFA in Chromium, press ENTER here to verify: ")
+        if args.auto:
+            print("Waiting for the signed-in page, max", args.timeout, "seconds.")
+            deadline = time.monotonic() + max(1, min(args.timeout, 900))
+            ready = False
+            while time.monotonic() < deadline:
+                try:
+                    assert browser.page is not None
+                    ready = bool(browser.page.locator(site.success_selector).is_visible(timeout=500))
+                except Exception:
+                    ready = False
+                if ready:
+                    break
+                time.sleep(1)
+            if not ready:
+                print("AUTH_REQUIRED: timeout or missing login marker. No state saved.")
+                return 1
+        else:
+            input("After finishing login and MFA in Chromium, press ENTER here to verify: ")
         if not check_login(browser, site):
             print("AUTH_REQUIRED: successful login marker not found. No new state was saved.")
             return 1
