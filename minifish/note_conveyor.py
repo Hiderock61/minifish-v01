@@ -13,6 +13,7 @@ import argparse
 import json
 import os
 import re
+import tempfile
 from typing import Any
 
 from .auth import SiteAuth, check_login, load_site, preflight_action, state_path
@@ -206,6 +207,14 @@ def run_live(article: Article, *, config: Path, selectors_path: Path,
     if urlsplit(site.base_url).hostname != "note.com":
         raise ValueError("live note target must be note.com")
     selectors = DraftSelectors.from_dict(json.loads(selectors_path.read_text(encoding="utf-8")))
+    # A proof ledger prevents accidental duplicate drafts on repeated commands.
+    # Only verified saves are recorded, never raw article text or session data.
+    ledger_path = state_root.parent / "note_draft_ledger.json"
+    ledger = json.loads(ledger_path.read_text(encoding="utf-8")) if ledger_path.is_file() else {}
+    previous = ledger.get(article.content_key)
+    if previous:
+        return {"status": "ALREADY_SAVED", "content_key": article.content_key,
+                "draft_url": previous.get("draft_url", "")}
     state = state_path(site_id, state_root)
     if not state.is_file():
         return {"status": "AUTH_REQUIRED", "content_key": article.content_key}
@@ -214,7 +223,23 @@ def run_live(article: Article, *, config: Path, selectors_path: Path,
         if not check_login(browser, site):
             return {"status": "AUTH_REQUIRED", "content_key": article.content_key}
         url = write_draft(browser, article, selectors, site)
-    return {"status": "DRAFT_SAVED", "content_key": article.content_key, "draft_url": url}
+    from .auth import public_url
+    cleaned_url = public_url(url)
+    ledger[article.content_key] = {"status": "DRAFT_SAVED", "draft_url": cleaned_url}
+    ledger_path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+    fd, tmp = tempfile.mkstemp(prefix=".note-ledger-", dir=str(ledger_path.parent))
+    try:
+        os.fchmod(fd, 0o600)
+        with os.fdopen(fd, "w", encoding="utf-8") as out:
+            fd = -1
+            json.dump(ledger, out, ensure_ascii=False, indent=2)
+        os.replace(tmp, ledger_path)
+    finally:
+        if fd >= 0:
+            os.close(fd)
+        if os.path.exists(tmp):
+            os.unlink(tmp)
+    return {"status": "DRAFT_SAVED", "content_key": article.content_key, "draft_url": cleaned_url}
 
 
 def main() -> int:
@@ -238,7 +263,7 @@ def main() -> int:
         out = {"status": "FAILED", "failure_type": type(exc).__name__,
                "content_key": article.content_key}
     print(json.dumps({**article.manifest(), **out}, ensure_ascii=False, indent=2))
-    return 0 if out["status"] in ("MOCK_DRAFT_VERIFIED", "DRAFT_SAVED") else 1
+    return 0 if out["status"] in ("MOCK_DRAFT_VERIFIED", "DRAFT_SAVED", "ALREADY_SAVED") else 1
 
 
 if __name__ == "__main__":
