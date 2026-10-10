@@ -1,0 +1,107 @@
+name: MiniFish CW 10-candidate screening
+
+on:
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  screen:
+    if: ${{ github.event.issue.number == 1 && github.event.issue.user.login == 'Hiderock61' && github.event.comment.body == '/minifish-cw-batch' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install MiniFish
+        run: |
+          python -m pip install -r requirements.txt
+          python -m playwright install --with-deps chromium
+      - name: Run ten read-only profile observations
+        run: |
+          python - <<'PY'
+          import json, time
+          from pathlib import Path
+          from minifish import MiniFishRunner, ScriptedPlanner, Action
+
+          # Public profiles only. SCREENING CANDIDATES, not presumed completers.
+          candidates = [
+              ("青りんご","262146"),
+              ("hitoshigoto","7142734"),
+              ("HOSHINO30","6908277"),
+              ("hitoshianzai","6738181"),
+              ("本多・事務データ入力","6902077"),
+              ("dark246","2941545"),
+              ("たつ・Excelサポート","1441757"),
+              ("Maga_rhyth","6567871"),
+              ("ITマン","5485829"),
+              ("panyanyanda","5471157"),
+          ]
+          root = Path("cw_screening")
+          root.mkdir(exist_ok=True)
+          results=[]
+          for label, profile_id in candidates:
+              url = f"https://crowdworks.jp/public/employees/{profile_id}"
+              runner = MiniFishRunner(
+                  ScriptedPlanner([Action(type="done", result="Read-only initial page observed")]),
+                  max_steps=1, max_duration_seconds=70, headless=True,
+                  capture_dir=str(root / profile_id / "capture"),
+                  log_path=str(root / profile_id / "run.json"),
+              )
+              state=runner.run(goal="Read only public worker profile; no inputs or writes.", start_url=url)
+              obs=state.events[0].observation if state.events else {}
+              raw=obs.get("text_excerpt","")
+              record={
+                  "label":label, "id":profile_id, "url":url,
+                  "status":state.status, "error":state.error,
+                  "title":obs.get("title",""), "text":raw,
+                  "aria":obs.get("aria_snapshot",""),
+                  "classification":"UNCLASSIFIED; NEED JOB-SPECIFIC COMPLETION EVIDENCE"
+              }
+              results.append(record)
+              (root / (profile_id + ".json")).write_text(json.dumps(record,ensure_ascii=False,indent=2),encoding="utf-8")
+              print(f"{profile_id} {state.status} title={obs.get('title','')[:70]}",flush=True)
+              time.sleep(0.5)
+          (root/"summary.json").write_text(json.dumps(results,ensure_ascii=False,indent=2),encoding="utf-8")
+          PY
+      - name: Post compact evidence for each worker
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if test -f cw_screening/summary.json; then
+            python - <<'PY'
+          import json
+          from pathlib import Path
+          results=json.loads(Path("cw_screening/summary.json").read_text(encoding="utf-8"))
+          lines=["🐟 MiniFish 10-person READ ONLY screen: successful webpage observation does NOT prove same-job completion."]
+          for x in results:
+              t=x.get("text") or ""
+              # The opening screen and nearby reviews; preserve uncertainty.
+              begin=t[:1450].replace("`","′")
+              end=t[1450:2750].replace("`","′")
+              lines.append(
+                  f"\n### {x['label']} | {x['id']} | {x['status']}\n"
+                  + x["url"] + "\n"
+                  + "First view: <details><summary>Text</summary>\n\n"
+                  + begin + "\n\n</details>\n"
+                  + "Reviews / results region: <details><summary>Text</summary>\n\n"
+                  + end + "\n\n</details>"
+              )
+          Path("cw_screening/issue_report.md").write_text("\n".join(lines),encoding="utf-8")
+          PY
+            gh api repos/${{ github.repository }}/issues/1/comments -f body="$(cat cw_screening/issue_report.md)" || true
+          fi
+      - name: Upload MiniFish captures and JSON
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: minifish-cw-10-screen
+          path: cw_screening/
+          retention-days: 7
+          if-no-files-found: warn
