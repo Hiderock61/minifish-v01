@@ -44,12 +44,12 @@ python mock_auth_site.py
 Terminal C:
 
 ```bash
-DISPLAY=:99 python auth_setup.py mock_site
+DISPLAY=:99 python auth_setup.py mock_site --auto --timeout 300
 ```
 
 iPhone SafariのnoVNC画面にChromiumの「Login demo」が現れたら、「Sign in (no password)」をタップする。これは本人のアカウントを使わない模擬会員サイト。
 
-Chromiumに「Demo Member」が出たら、Terminal Cの入力でEnterを押す。
+Chromiumに「Demo Member」が出たら、MiniFishが自動的にログイン完了を検出する。Terminal CでEnterを押す必要はない。
 認証済み要素 `#signed-in-user` が確認できた場合のみ、`.minifish/sites/mock_site/storage.json` を保存。
 
 ## 4. ブラウザ再起動後の復元チェック
@@ -73,7 +73,7 @@ Terminal Aの `Ctrl-C` で **6080の遠隔ログイン画面を必ず停止**す
 `auth_sites.example.json` を見て `.minifish/auth_sites.json` にサイトを追加する。
 `allow_actions` は初期状態で `goto/back/wait` のみ。click/fill/pressは明示許可が必要であり、高影響の送信ボタン等は別の人間承認ゲートが止める。ただしセレクタやキーボード経由の回避を完全には防いでいないため、本番自動投稿・ポイント申請はまだ有効化しない。
 
-ログインのたび `DISPLAY=:99 python auth_setup.py <SITE_ID>` を使い、iPhoneの遠隔Chromium画面で本人がログイン。MFA、SMS、CAPTCHAも本人が手動処理する。
+ログインのたび `DISPLAY=:99 python auth_setup.py <SITE_ID> --auto --timeout 300` を使い、iPhoneの遠隔Chromium画面で本人がログイン。MFA、SMS、CAPTCHAも本人が手動処理する。
 
 ## 6. できた／まだの線引き
 - ✅ GUIを遠隔転送する起動スクリプト
