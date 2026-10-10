@@ -133,7 +133,7 @@ let timer = null;
 let currentRunId = null;
 
 function terminal(status) {
-  return ['COMPLETED','FAILED','CANCELLED'].includes(status);
+  return ['WAITING','COMPLETED','FAILED','CANCELLED'].includes(status);
 }
 
 function paint(data) {
@@ -141,7 +141,7 @@ function paint(data) {
   const status = data.status || '-';
   const s = document.getElementById('status');
   s.textContent = status;
-  s.className = terminal(status) ? (status === 'COMPLETED' ? 'ok' : 'bad') : 'live';
+  s.className = status === 'COMPLETED' ? 'ok' : (status === 'WAITING' ? 'live' : (terminal(status) ? 'bad' : 'live'));
   document.getElementById('step').textContent = String(data.step_count || 0);
   document.getElementById('runId').textContent = 'run_id: ' + (data.run_id || '-');
   document.getElementById('current').textContent = data.current_url || '-';
@@ -349,8 +349,21 @@ async def create_run(request: RunRequest, background_tasks: BackgroundTasks) -> 
         if not (os.getenv("OPENAI_API_KEY") and os.getenv("OPENAI_MODEL")):
             raise HTTPException(status_code=503, detail="OPENAI_API_KEY and OPENAI_MODEL are required for AGENT mode")
 
-    run_id = "run_" + uuid.uuid4().hex[:16]
     start_url = "about:blank" if request.mode == "demo" else (request.url or "")
+    with RUNS_LOCK:
+        for existing in RUNS.values():
+            if (
+                existing.get("status") in ("PENDING", "RUNNING", "WAITING")
+                and existing.get("goal") == goal
+                and existing.get("mode") == request.mode
+                and existing.get("start_url") == start_url
+            ):
+                raise HTTPException(
+                    status_code=409,
+                    detail=f"duplicate active run blocked: {existing.get('run_id')} ({existing.get('status')})",
+                )
+
+    run_id = "run_" + uuid.uuid4().hex[:16]
     initial = {
         "run_id": run_id,
         "status": "PENDING",
@@ -387,7 +400,7 @@ async def cancel_run(run_id: str) -> dict[str, Any]:
         if not data:
             raise HTTPException(status_code=404, detail="run not found")
         CANCEL_FLAGS[run_id] = True
-        if data["status"] == "PENDING":
+        if data["status"] in ("PENDING", "WAITING"):
             data = {**data, "status": "CANCELLED", "result": "cancelled by user"}
             RUNS[run_id] = data
     return data
