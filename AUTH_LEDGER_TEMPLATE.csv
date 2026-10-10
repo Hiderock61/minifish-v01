@@ -1,0 +1,2 @@
+site_id,service,registration_state,login_state,automation_permission,mfa_state,profile_state,check_rule_confirmed,last_restore_test,result,next_action
+mock_site,local mock,TEST_ONLY,NOT_TESTED,LOCAL_TEST_ONLY,NO,UNKNOWN,YES,,PENDING,run mocked E2E
