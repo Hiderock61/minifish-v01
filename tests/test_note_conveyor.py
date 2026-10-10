@@ -2,7 +2,7 @@ import json
 import pytest
 
 from minifish.note_conveyor import (
-    Article, DraftSelectors, mock_draft, write_draft, MOCK_SELECTORS, MOCK_EDITOR_HTML
+    Article, DraftSelectors, mock_draft, write_draft, run_live, MOCK_SELECTORS, MOCK_EDITOR_HTML
 )
 from minifish.browser import PlaywrightBrowser
 from minifish.auth import SiteAuth
@@ -88,3 +88,29 @@ def test_live_preflight_blocks_unapproved_write_action():
     with PlaywrightBrowser(headless=True, save_profile_on_close=False) as browser:
         with pytest.raises(ValueError, match="AUTH_POLICY"):
             write_draft(browser, article, selectors, site)
+
+
+def test_verified_draft_ledger_prevents_duplicate_repost(tmp_path):
+    article = Article.from_dict(JOB)
+    site_cfg = tmp_path / "auth_sites.json"
+    site_cfg.write_text(json.dumps({"sites": [{
+        "site_id": "note_jp",
+        "base_url": "https://note.com",
+        "check_url": "https://note.com/account",
+        "success_selector": "#signed-in",
+        "login_path_markers": ["/login"],
+        "allow_actions": ["goto", "fill", "click", "back", "wait"],
+    }]}), encoding="utf-8")
+    selectors = tmp_path / "note_editor.json"
+    selectors.write_text(json.dumps({
+        "editor_url": "https://note.com/new", "title": "#title",
+        "body": "#body", "save": "#draft", "saved_proof": "#saved",
+        "save_label": "下書き保存",
+    }), encoding="utf-8")
+    (tmp_path / "note_draft_ledger.json").write_text(json.dumps({
+        article.content_key: {"status": "DRAFT_SAVED", "draft_url": "https://note.com/draft/123"}
+    }), encoding="utf-8")
+    result = run_live(article, config=site_cfg, selectors_path=selectors,
+                      state_root=tmp_path / "sites")
+    assert result["status"] == "ALREADY_SAVED"
+    assert result["draft_url"] == "https://note.com/draft/123"
