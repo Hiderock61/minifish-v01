@@ -46,8 +46,14 @@ class MiniFishRunner:
         start_url: str = "about:blank",
         start_html: str | None = None,
         run_id: str | None = None,
+        human_facts: list[str] | None = None,
     ) -> RunState:
-        state = RunState(goal=goal, start_url=start_url, **({"run_id": run_id} if run_id else {}))
+        state = RunState(
+            goal=goal,
+            start_url=start_url,
+            human_facts=list(human_facts or []),
+            **({"run_id": run_id} if run_id else {}),
+        )
         state.status = "RUNNING"
         started = time.monotonic()
         history: list[dict[str, Any]] = []
@@ -79,7 +85,7 @@ class MiniFishRunner:
                     screenshot = browser.screenshot(step)
                     html_capture = browser.html_capture(step)
 
-                    action = self.planner.next_action(state.goal, observation, history)
+                    action = self.planner.next_action(state.goal, observation, history, state.human_facts)
                     decision, reason = self.guard.check(action, observation, history)
 
                     signature = self.guard._signature(action, observation.url)
