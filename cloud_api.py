@@ -12,7 +12,7 @@ from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field
 
 from minifish import Action, MiniFishRunner, OpenAIPlanner, ScriptedPlanner
-from minifish.auth import load_site, state_path
+from minifish.auth import load_site, state_path, public_url
 
 app = FastAPI(title="MiniFish Cloud v0.2")
 
@@ -284,7 +284,7 @@ class RunRequest(BaseModel):
     site_id: str | None = None
 
 
-def snapshot_from_state(state: Any, *, mode: str, start_url: str) -> dict[str, Any]:
+def snapshot_from_state(state: Any, *, mode: str, start_url: str, site_id: str | None = None) -> dict[str, Any]:
     events = [asdict(e) for e in state.events]
     last = state.events[-1] if state.events else None
     return {
@@ -293,7 +293,8 @@ def snapshot_from_state(state: Any, *, mode: str, start_url: str) -> dict[str, A
         "step_count": state.step_count,
         "goal": state.goal,
         "mode": mode,
-        "start_url": start_url,
+        "site_id": site_id,
+        "start_url": public_url(start_url) if site_id else start_url,
         "current_url": last.after_url if last else start_url,
         "last_action": last.proposed_action if last else None,
         "result": state.final_result,
@@ -353,7 +354,7 @@ def run_worker(run_id: str, request: RunRequest) -> None:
         log_path=str(run_dir / "run.json"),
         on_event=lambda state, _event: save_snapshot(
             run_id,
-            snapshot_from_state(state, mode=request.mode, start_url=start_url),
+            snapshot_from_state(state, mode=request.mode, start_url=start_url, site_id=request.site_id),
         ),
         should_stop=lambda: is_cancelled(run_id),
     )
@@ -366,7 +367,7 @@ def run_worker(run_id: str, request: RunRequest) -> None:
     )
     save_snapshot(
         run_id,
-        snapshot_from_state(state, mode=request.mode, start_url=start_url),
+        snapshot_from_state(state, mode=request.mode, start_url=start_url, site_id=request.site_id),
     )
 
 
@@ -430,8 +431,8 @@ async def create_run(request: RunRequest, background_tasks: BackgroundTasks) -> 
         "goal": goal,
         "mode": request.mode,
         "site_id": request.site_id,
-        "start_url": start_url,
-        "current_url": start_url,
+        "start_url": public_url(start_url) if request.site_id else start_url,
+        "current_url": public_url(start_url) if request.site_id else start_url,
         "last_action": None,
         "result": None,
         "error": None,
