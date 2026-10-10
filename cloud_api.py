@@ -12,6 +12,7 @@ from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field
 
 from minifish import Action, MiniFishRunner, OpenAIPlanner, ScriptedPlanner
+from minifish.auth import load_site, state_path, public_url
 
 app = FastAPI(title="MiniFish Cloud v0.2")
 
@@ -20,6 +21,8 @@ CANCEL_FLAGS: dict[str, bool] = {}
 RUNS_LOCK = Lock()
 RUN_ROOT = Path(os.getenv("MINIFISH_RUN_ROOT", "/tmp/minifish-runs"))
 PROFILE_PATH = os.getenv("MINIFISH_PROFILE_PATH", ".minifish/profile.json")
+AUTH_CONFIG_PATH = os.getenv("MINIFISH_AUTH_CONFIG", ".minifish/auth_sites.json")
+AUTH_STATE_ROOT = os.getenv("MINIFISH_AUTH_STATE_ROOT", ".minifish/sites")
 
 DEMO_HTML = r"""
 <!doctype html>
@@ -121,6 +124,8 @@ CONTROL_HTML = r"""
     </select>
     <label for="url">START URL</label>
     <input id="url" type="url" inputmode="url" placeholder="https://example.com">
+    <label for="siteId">SITE ID（登録済みのログイン使用時のみ。空欄は公開ページ用）</label>
+    <input id="siteId" placeholder="例: survey_a" autocomplete="off">
     <label for="goal">GOAL</label>
     <textarea id="goal">プロフィール編集画面を開き、表示名をヒデロックにして保存する</textarea>
     <div class="buttons">
@@ -220,6 +225,7 @@ runButton.addEventListener('click', async () => {
   const mode = modeInput.value;
   const goal = document.getElementById('goal').value.trim();
   const url = urlInput.value.trim();
+  const site_id = mode === 'agent' ? document.getElementById('siteId').value.trim() : '';
   if (!goal) {
     document.getElementById('notice').textContent = 'GOALが必要です。';
     return;
@@ -232,7 +238,7 @@ runButton.addEventListener('click', async () => {
   const res = await fetch('/api/run', {
     method:'POST',
     headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({goal, url: url || null, mode})
+    body:JSON.stringify({goal, url: url || null, mode, site_id: site_id || null})
   });
   const data = await res.json();
   if (!res.ok) {
@@ -275,9 +281,10 @@ class RunRequest(BaseModel):
     url: str | None = None
     mode: Literal["demo", "poikatsu_demo", "agent"] = "demo"
     human_facts: list[str] = Field(default_factory=list)
+    site_id: str | None = None
 
 
-def snapshot_from_state(state: Any, *, mode: str, start_url: str) -> dict[str, Any]:
+def snapshot_from_state(state: Any, *, mode: str, start_url: str, site_id: str | None = None) -> dict[str, Any]:
     events = [asdict(e) for e in state.events]
     last = state.events[-1] if state.events else None
     return {
@@ -286,7 +293,8 @@ def snapshot_from_state(state: Any, *, mode: str, start_url: str) -> dict[str, A
         "step_count": state.step_count,
         "goal": state.goal,
         "mode": mode,
-        "start_url": start_url,
+        "site_id": site_id,
+        "start_url": public_url(start_url) if site_id else start_url,
         "current_url": last.after_url if last else start_url,
         "last_action": last.proposed_action if last else None,
         "result": state.final_result,
@@ -332,17 +340,21 @@ def run_worker(run_id: str, request: RunRequest) -> None:
         start_url = request.url or ""
         start_html = None
 
+    auth_site = load_site(request.site_id, AUTH_CONFIG_PATH) if request.site_id else None
+    # Auth runs use an isolated cookie jar. Public/demo runs never reuse credentials.
+    profile_path = str(state_path(request.site_id, AUTH_STATE_ROOT)) if request.site_id else None
     runner = MiniFishRunner(
         planner,
         max_steps=25,
         max_duration_seconds=180,
         headless=True,
-        profile_path=PROFILE_PATH,
-        capture_dir=str(run_dir / "captures"),
+        profile_path=profile_path,
+        auth_site=auth_site,
+        capture_dir=None if auth_site else str(run_dir / "captures"),
         log_path=str(run_dir / "run.json"),
         on_event=lambda state, _event: save_snapshot(
             run_id,
-            snapshot_from_state(state, mode=request.mode, start_url=start_url),
+            snapshot_from_state(state, mode=request.mode, start_url=start_url, site_id=request.site_id),
         ),
         should_stop=lambda: is_cancelled(run_id),
     )
@@ -355,7 +367,7 @@ def run_worker(run_id: str, request: RunRequest) -> None:
     )
     save_snapshot(
         run_id,
-        snapshot_from_state(state, mode=request.mode, start_url=start_url),
+        snapshot_from_state(state, mode=request.mode, start_url=start_url, site_id=request.site_id),
     )
 
 
@@ -379,15 +391,27 @@ async def create_run(request: RunRequest, background_tasks: BackgroundTasks) -> 
     goal = request.goal.strip()
     if not goal:
         raise HTTPException(status_code=400, detail="GOAL is required")
+    if request.site_id and request.mode != "agent":
+        raise HTTPException(status_code=400, detail="site_id is only valid in AGENT mode")
     if request.mode == "agent":
         if not request.url or not request.url.startswith(("http://", "https://")):
             raise HTTPException(status_code=400, detail="AGENT mode requires an http(s) START URL")
         if not (os.getenv("OPENAI_API_KEY") and os.getenv("OPENAI_MODEL")):
             raise HTTPException(status_code=503, detail="OPENAI_API_KEY and OPENAI_MODEL are required for AGENT mode")
+        if request.site_id:
+            try:
+                load_site(request.site_id, AUTH_CONFIG_PATH).validate_target(request.url)
+            except (ValueError, OSError) as exc:
+                raise HTTPException(status_code=400, detail=f"invalid site configuration: {exc}") from exc
 
     start_url = "about:blank" if request.mode in ("demo", "poikatsu_demo") else (request.url or "")
     with RUNS_LOCK:
         for existing in RUNS.values():
+            if (
+                request.site_id and existing.get("site_id") == request.site_id
+                and existing.get("status") in ("PENDING", "RUNNING")
+            ):
+                raise HTTPException(status_code=409, detail="another run uses this site profile")
             if (
                 existing.get("status") in ("PENDING", "RUNNING", "WAITING")
                 and existing.get("goal") == goal
@@ -406,8 +430,9 @@ async def create_run(request: RunRequest, background_tasks: BackgroundTasks) -> 
         "step_count": 0,
         "goal": goal,
         "mode": request.mode,
-        "start_url": start_url,
-        "current_url": start_url,
+        "site_id": request.site_id,
+        "start_url": public_url(start_url) if request.site_id else start_url,
+        "current_url": public_url(start_url) if request.site_id else start_url,
         "last_action": None,
         "result": None,
         "error": None,

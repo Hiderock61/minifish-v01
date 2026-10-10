@@ -15,5 +15,13 @@ jobs:
           python-version: "3.11"
       - name: Install dependencies
         run: pip install -r requirements.txt
+      - name: Install Chromium for Playwright E2E
+        run: python -m playwright install --with-deps chromium
+      - name: Install virtual desktop components
+        run: sudo apt-get update -qq && sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq xvfb x11vnc novnc websockify
+      - name: Check shell scripts
+        run: bash -n start_auth_desktop.sh iphone_login_demo.sh tests/test_auth_desktop.sh
+      - name: Check live noVNC endpoint and RFB WebSocket
+        run: bash tests/test_auth_desktop.sh
       - name: Run tests
         run: PYTHONPATH=. pytest -q

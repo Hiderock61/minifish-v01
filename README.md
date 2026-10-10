@@ -98,3 +98,22 @@ MiniFishを作る目的はTinyFishの完全コピーではなく、Agentの **PL
 **MiniFishを「動く魚」から「司令塔付きWeb作業員」にする。**
 
 次の大きな段階は、Supervisor Gateの判定をSTATE LEDGER / HUMAN FACTへ接続し、ChatGPTから実Web仕事を任せても迷子・二重実行・高影響操作の暴走を防げる状態にすること。
+
+## 🐟📱 iPhoneからログイン保存を1回試す（本物の認証不要）
+
+**v0.2実験用ブランチ。Codespacesの画面共有は必ずPRIVATEで実行する。**
+
+1. [MiniFishの専用Codespaceを開く](https://codespaces.new/Hiderock61/minifish-v01/tree/feat/auth-gate-v01)。
+2. Terminalに次を1行入力する。
+
+```bash
+bash iphone_login_demo.sh
+```
+
+3. Codespacesの **PORTS → 6080 → Private** を確認。HTTPS転送URLの末尾を `/vnc.html` にして、iPhone Safariで開く。
+4. `Connect` を押し、Chrome画面の `Sign in (no password)` を押す。
+5. Terminalで `PASS: IPHONE_MOCK_LOGIN_RESTORE` を確認。実験後はCodespaceを停止する。
+
+この装置は**模擬ログイン専用**で、実アカウントのID/パスワードは一切入力しない。
+
+詳しくは [IPHONE_AUTH_DESKTOP.md](IPHONE_AUTH_DESKTOP.md) / [AUTH_ROOM.md](AUTH_ROOM.md)。実機Safariでの検品と本物のサイト接続は別工程。

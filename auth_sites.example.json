@@ -1,0 +1,19 @@
+{
+  "sites": [
+    {
+      "site_id": "mock_site",
+      "base_url": "http://localhost:8765",
+      "check_url": "http://localhost:8765/account",
+      "success_selector": "#signed-in-user",
+      "login_path_markers": [
+        "/login",
+        "/signin"
+      ],
+      "allow_actions": [
+        "goto",
+        "back",
+        "wait"
+      ]
+    }
+  ]
+}

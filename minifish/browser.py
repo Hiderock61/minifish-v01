@@ -4,6 +4,7 @@ from pathlib import Path
 from typing import Any
 import os
 import time
+import tempfile
 
 from playwright.sync_api import sync_playwright, Page, Browser, BrowserContext, Playwright
 
@@ -18,11 +19,13 @@ class PlaywrightBrowser:
         headless: bool = True,
         executable_path: str | None = None,
         profile_path: str | None = None,
+        save_profile_on_close: bool = True,
         capture_dir: str | None = None,
     ) -> None:
         self.headless = headless
         self.executable_path = executable_path or os.getenv("MINIFISH_CHROMIUM_PATH")
         self.profile_path = Path(profile_path) if profile_path else None
+        self.save_profile_on_close = save_profile_on_close
         self.capture_dir = Path(capture_dir) if capture_dir else None
         if self.capture_dir:
             self.capture_dir.mkdir(parents=True, exist_ok=True)
@@ -49,9 +52,21 @@ class PlaywrightBrowser:
         return self
 
     def __exit__(self, exc_type, exc, tb) -> None:
-        if self.context and self.profile_path:
-            self.profile_path.parent.mkdir(parents=True, exist_ok=True)
-            self.context.storage_state(path=str(self.profile_path))
+        if self.context and self.profile_path and self.save_profile_on_close:
+            self.profile_path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+            fd, temporary = tempfile.mkstemp(prefix=".state-", dir=str(self.profile_path.parent))
+            try:
+                os.fchmod(fd, 0o600)
+                os.close(fd)
+                fd = -1
+                self.context.storage_state(path=temporary, indexed_db=True)
+                os.replace(temporary, self.profile_path)
+                os.chmod(self.profile_path, 0o600)
+            finally:
+                if fd >= 0:
+                    os.close(fd)
+                if os.path.exists(temporary):
+                    os.unlink(temporary)
         if self.context:
             self.context.close()
         if self.browser:
