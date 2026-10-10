@@ -78,6 +78,16 @@ def test_real_chromium_session_restore_and_auth_expiry(tmp_path):
         assert "private test info" not in payload
         assert not (tmp_path / "private-captures").exists()
 
+        # Agent code must never rewrite a human-approved auth file.
+        stored_before = state_path.read_bytes()
+        blocked = MiniFishRunner(
+            ScriptedPlanner([Action(type="click", role="link", name="Click to sign in")]),
+            auth_site=site, profile_path=str(state_path),
+        ).run(goal="Attempt a click", start_url=url + "/account")
+        assert blocked.status == "WAITING"
+        assert blocked.events[-1].decision.startswith("HUMAN: AUTH_POLICY:")
+        assert state_path.read_bytes() == stored_before
+
         LoginHandler.revoked = True
         runner = MiniFishRunner(
             ScriptedPlanner([Action(type="done", result="should not run")]),
