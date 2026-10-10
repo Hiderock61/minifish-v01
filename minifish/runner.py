@@ -5,7 +5,7 @@ from typing import Any, Callable
 import json
 import time
 
-from .models import Action, Event, RunState, now_iso
+from .models import Action, Event, LedgerEntry, RunState, now_iso
 from .browser import PlaywrightBrowser
 from .planner import Planner
 from .guard import SupervisorGate
@@ -227,6 +227,33 @@ class MiniFishRunner:
         return state
 
     def _notify(self, state: RunState, event: Event) -> None:
+        action = event.proposed_action or {}
+        target = (
+            action.get("name")
+            or action.get("url")
+            or action.get("selector")
+            or action.get("key")
+            or action.get("value")
+            or ""
+        )
+        execution = event.execution_result or {}
+        summary = (
+            execution.get("reason")
+            or execution.get("error")
+            or execution.get("result")
+            or ("ok" if execution.get("ok") else "no-op")
+        )
+        state.ledger.append(
+            LedgerEntry(
+                step=event.step,
+                at=event.at,
+                current_url=event.after_url or event.before_url,
+                action_type=str(action.get("type") or ""),
+                action_target=str(target),
+                decision=event.decision,
+                result_summary=str(summary),
+            )
+        )
         if self.on_event:
             self.on_event(state, event)
 
