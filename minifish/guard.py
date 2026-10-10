@@ -71,12 +71,25 @@ class SupervisorGate:
     def _human_gate_reason(cls, action: Action) -> str | None:
         if action.type != "click":
             return None
-        haystack = " ".join(
+        visible = " ".join(
             str(x or "")
-            for x in [action.name, action.selector, action.reason]
+            for x in [action.name, action.selector]
         ).lower()
         for term in cls.HUMAN_TERMS:
-            if term.lower() in haystack:
+            if term.lower() in visible:
+                return f"human approval required before high-impact action: {term}"
+
+        # Planner reasons are useful context, but generic words such as
+        # "submit" or "confirm" are too broad there (e.g. a harmless profile save).
+        strong_reason_terms = (
+            "購入", "注文", "契約", "削除", "退会", "解約", "応募", "申込",
+            "支払", "決済", "公開", "投稿",
+            "purchase", "buy", "order", "contract", "delete", "close account",
+            "apply", "payment", "publish",
+        )
+        reason = str(action.reason or "").lower()
+        for term in strong_reason_terms:
+            if term.lower() in reason:
                 return f"human approval required before high-impact action: {term}"
         return None
 
