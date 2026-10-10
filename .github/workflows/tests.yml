@@ -17,5 +17,7 @@ jobs:
         run: pip install -r requirements.txt
       - name: Install Chromium for Playwright E2E
         run: python -m playwright install --with-deps chromium
+      - name: Check remote-desktop script syntax
+        run: bash -n start_auth_desktop.sh
       - name: Run tests
         run: PYTHONPATH=. pytest -q
