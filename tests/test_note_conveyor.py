@@ -63,9 +63,14 @@ def test_mock_chromium_article_to_draft():
 def test_content_is_verified_not_just_clicked():
     article = Article.from_dict(JOB)
     with PlaywrightBrowser(headless=True, save_profile_on_close=False) as browser:
-        browser.page.set_content(MOCK_EDITOR_HTML)
-        result = mock_draft(article)
-        assert result["status"] == "MOCK_DRAFT_VERIFIED"
+        assert browser.page is not None
+        url = write_draft(
+            browser, article, MOCK_SELECTORS, prepared_html=MOCK_EDITOR_HTML
+        )
+        assert url == "about:blank"
+        assert browser.page.locator("#note-title").input_value() == article.title
+        assert browser.page.locator("#note-body").input_value() == article.body
+        assert browser.page.locator("#saved-indicator").is_visible()
 
 
 def test_live_preflight_blocks_unapproved_write_action():
