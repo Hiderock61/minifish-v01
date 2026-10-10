@@ -7,6 +7,9 @@ from urllib.parse import urlsplit, urlunsplit
 import json
 import re
 
+_VALID_ACTIONS = frozenset({"goto", "click", "fill", "press", "back", "wait"})
+_DEFAULT_ACTIONS = ("goto", "back", "wait")
+
 _ID = re.compile(r"^[a-z][a-z0-9_-]{1,39}$")
 
 
@@ -33,6 +36,7 @@ class SiteAuth:
     check_url: str
     success_selector: str
     login_path_markers: tuple[str, ...]
+    allow_actions: tuple[str, ...] = _DEFAULT_ACTIONS
 
     @classmethod
     def from_dict(cls, data: dict) -> "SiteAuth":
@@ -51,7 +55,12 @@ class SiteAuth:
             isinstance(m, str) and m.startswith("/") for m in markers
         ):
             raise ValueError("login_path_markers must be URL path prefixes")
-        return cls(sid, base, check, selector, tuple(m.lower() for m in markers))
+        allow_actions = data.get("allow_actions", list(_DEFAULT_ACTIONS))
+        if (not isinstance(allow_actions, list)
+            or any(not isinstance(a, str) or a not in _VALID_ACTIONS for a in allow_actions)):
+            raise ValueError("allow_actions contains an invalid action")
+        return cls(sid, base, check, selector,
+                   tuple(m.lower() for m in markers), tuple(allow_actions))
 
     def validate_target(self, url: str) -> None:
         if origin(url) != origin(self.base_url):
@@ -94,3 +103,22 @@ def check_login(browser, site: SiteAuth, *, navigate: bool = True) -> bool:
     except Exception:
         # No guessed success based on cookie presence or a non-login URL.
         return False
+
+
+def preflight_action(site: SiteAuth, action) -> str | None:
+    """Conservative action allowlist. Default authenticated runs are read-only."""
+    if action.type in ("done", "fail"):
+        return None
+    if action.type not in site.allow_actions:
+        return f"AUTH_POLICY: {action.type} requires explicit per-site permission"
+    if action.type == "goto":
+        try:
+            site.validate_target(action.url or "")
+        except ValueError:
+            return "AUTH_POLICY: external navigation blocked"
+    # A generic Enter/Return can submit a form despite an innocuous action name.
+    if action.type == "press" and (action.key or "").lower() in (
+        "enter", "return", "numpadenter"
+    ):
+        return "AUTH_POLICY: Enter may submit a form; manual review required"
+    return None
