@@ -59,7 +59,7 @@ class PlaywrightBrowser:
                 os.fchmod(fd, 0o600)
                 os.close(fd)
                 fd = -1
-                self.context.storage_state(path=temporary)
+                self.context.storage_state(path=temporary, indexed_db=True)
                 os.replace(temporary, self.profile_path)
                 os.chmod(self.profile_path, 0o600)
             finally:
