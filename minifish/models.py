@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 from typing import Any, Literal
 import uuid
 
-RunStatus = Literal["PENDING", "RUNNING", "COMPLETED", "FAILED", "CANCELLED"]
+RunStatus = Literal["PENDING", "RUNNING", "WAITING", "COMPLETED", "FAILED", "CANCELLED"]
 ActionType = Literal["goto", "click", "fill", "press", "back", "wait", "done", "fail"]
 
 
