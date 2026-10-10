@@ -47,6 +47,28 @@ DEMO_HTML = r"""
 </html>
 """
 
+POIKATSU_DEMO_HTML = r"""
+<!doctype html><html lang="ja"><head><meta charset="utf-8"><title>MiniFish ポイ活模擬アンケート</title></head>
+<body>
+<h1>ポイ活のススメ｜安全な模擬アンケート</h1>
+<p>本人回答DBと同じ形式の練習用画面。外部送信・ポイント付与はありません。</p>
+<fieldset><legend>Q1. コンビニを利用する頻度</legend>
+<label><input type="radio" name="q1" value="weekly8">週8回以上</label>
+<label><input type="radio" name="q1" value="weekly1">週1回程度</label>
+</fieldset>
+<fieldset><legend>Q2. 同じ品質ならどちらを選びますか</legend>
+<label><input type="radio" name="q2" value="cheaper">価格が同じなら安い方</label>
+<label><input type="radio" name="q2" value="expensive">高い方</label>
+</fieldset>
+<fieldset><legend>Q3. 今見ている広告への印象</legend>
+<label><input type="radio" name="q3" value="positive">良い</label>
+<label><input type="radio" name="q3" value="negative">悪い</label>
+</fieldset>
+<p>Q3は実際の広告素材がないため未回答のまま残す。</p>
+<p>送信ボタンは設置しない。</p>
+</body></html>
+"""
+
 CONTROL_HTML = r"""
 <!doctype html>
 <html lang="ja">
@@ -94,6 +116,7 @@ CONTROL_HTML = r"""
     <label for="mode">MODE</label>
     <select id="mode">
       <option value="demo">DEMO｜安全な内蔵ページ</option>
+      <option value="poikatsu_demo">POIKATSU DEMO｜模擬アンケート</option>
       <option value="agent">AGENT｜実Web</option>
     </select>
     <label for="url">START URL</label>
@@ -250,7 +273,7 @@ modeInput.addEventListener('change', async () => {
 class RunRequest(BaseModel):
     goal: str
     url: str | None = None
-    mode: Literal["demo", "agent"] = "demo"
+    mode: Literal["demo", "poikatsu_demo", "agent"] = "demo"
     human_facts: list[str] = Field(default_factory=list)
 
 
@@ -295,6 +318,15 @@ def run_worker(run_id: str, request: RunRequest) -> None:
         ])
         start_url = "about:blank"
         start_html = DEMO_HTML
+    elif request.mode == "poikatsu_demo":
+        # Only user-confirmed mock answers. Unknown Q3 stays untouched.
+        planner = ScriptedPlanner([
+            Action(type="click", role="radio", name="週8回以上", reason="mock Q1: existing answer candidate"),
+            Action(type="click", role="radio", name="価格が同じなら安い方", reason="mock Q2: existing answer candidate"),
+            Action(type="done", result="模擬回答2件を入力、未知のQ3は未回答、外部送信なし。HTMLキャプチャで選択状態を確認する", reason="dry-run only"),
+        ])
+        start_url = "about:blank"
+        start_html = POIKATSU_DEMO_HTML
     else:
         planner = OpenAIPlanner()
         start_url = request.url or ""
@@ -353,7 +385,7 @@ async def create_run(request: RunRequest, background_tasks: BackgroundTasks) -> 
         if not (os.getenv("OPENAI_API_KEY") and os.getenv("OPENAI_MODEL")):
             raise HTTPException(status_code=503, detail="OPENAI_API_KEY and OPENAI_MODEL are required for AGENT mode")
 
-    start_url = "about:blank" if request.mode == "demo" else (request.url or "")
+    start_url = "about:blank" if request.mode in ("demo", "poikatsu_demo") else (request.url or "")
     with RUNS_LOCK:
         for existing in RUNS.values():
             if (
