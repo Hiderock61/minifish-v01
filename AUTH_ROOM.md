@@ -70,3 +70,24 @@ iPhone単体で完結したとは扱わない。
 `PYTHONPATH=. pytest -q tests/test_auth.py`
 
 本番サイトでの成功を記録するには、保存 → プロセス終了 → 再起動 → ログイン確認の一連の **実サイトE2E** が別途必要。
+
+
+## v0.2 upgrade｜2026-10-11
+
+### 実装済み（実機確認前）
+- `start_auth_desktop.sh`: CodespacesのXvfb + x11vnc + noVNCによるiPhone Safariからの遠隔Chromium操作入口。**6080ポートは必ずPRIVATE**。
+- `auth_setup.py --auto`: 本人が遠隔画面でログインした後、成功要素を自動検知して認証済みプロファイルを保存（パスワード等は表示・ログ化しない）。
+- `auth_check.py SITE_ID`: AIなしで別のheadless Chromiumを起動し、認証復元の有効性を判定。
+- `mock_auth_site.py`: 実アカウントを使わずiPhoneの遠隔ログインを動作確認できるlocalhost模擬サイト。
+- 認証保存でIndexedDBも含める。
+- `allow_actions`: 認証サイトでは初期値は `goto/back/wait`。click/fill/pressはサイト別で明示許可。Enter/Returnによるフォーム送信は人間確認。
+- 通常のAgent実行では保存済み認証ファイルを**上書きしない**。状態保存はログイン成功の検証を通ったときだけ。
+- テストを追加し、起動スクリプトのbash構文もCIで検査。
+
+### 重大な制約
+- **iPhone Safari実機での接続、実際のポイ活サイトへのログイン、Codespacesの可視デスクトップ操作は未検品。**
+- 外部実サイトは規約・操作許可・ログイン成功セレクタを個別に確認する。
+- 操縦席のアプリ内独立認証、秘密ページのAI Plannerへの送信制限、無人実行は依然未解決。
+- ログイン時は一時的なprivate noVNCを使い、完了後に停止する。公開転送・第三者共有は厳禁。
+
+詳細: [IPHONE_AUTH_DESKTOP.md](./IPHONE_AUTH_DESKTOP.md)
