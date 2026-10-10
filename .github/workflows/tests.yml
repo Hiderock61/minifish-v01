@@ -15,5 +15,7 @@ jobs:
           python-version: "3.11"
       - name: Install dependencies
         run: pip install -r requirements.txt
+      - name: Install Chromium for Playwright E2E
+        run: python -m playwright install --with-deps chromium
       - name: Run tests
         run: PYTHONPATH=. pytest -q
