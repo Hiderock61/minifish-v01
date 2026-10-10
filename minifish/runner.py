@@ -9,7 +9,7 @@ from .models import Action, Event, LedgerEntry, RunState, now_iso
 from .browser import PlaywrightBrowser
 from .planner import Planner
 from .guard import SupervisorGate
-from .auth import SiteAuth, check_login, origin, public_url
+from .auth import SiteAuth, check_login, origin, public_url, preflight_action
 
 
 class AuthRequired(Exception):
@@ -85,7 +85,9 @@ class MiniFishRunner:
                 if self.auth_site:
                     if not check_login(browser, self.auth_site):
                         raise AuthRequired("AUTH_REQUIRED: session expired or login not confirmed.")
-                    browser.save_profile_on_close = True
+                    # Only the dedicated, human-verified sign-in program writes credentials.
+                    # Routine Agent runs read the session and never overwrite it.
+                    browser.save_profile_on_close = False
                 if start_html is not None:
                     assert browser.page is not None
                     browser.page.set_content(start_html, wait_until="domcontentloaded")
@@ -122,6 +124,10 @@ class MiniFishRunner:
 
                     action = self.planner.next_action(state.goal, observation, history, state.human_facts)
                     decision, reason = self.guard.check(action, observation, history)
+                    if self.auth_site and decision == "PASS":
+                        policy = preflight_action(self.auth_site, action)
+                        if policy:
+                            decision, reason = "HUMAN", policy
 
                     recorded_action = {
                         **action.__dict__,
