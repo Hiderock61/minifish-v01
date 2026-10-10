@@ -3,7 +3,8 @@ from pathlib import Path
 
 import pytest
 
-from minifish.auth import SiteAuth, check_login, load_site, state_path, public_url
+from minifish.auth import SiteAuth, check_login, load_site, state_path, public_url, preflight_action
+from minifish.models import Action
 
 
 SITE = {
@@ -69,3 +70,19 @@ def test_auth_requires_visible_proof():
 
 def test_public_url_redacts_query():
     assert public_url("https://example.com/a?token=secret#auth") == "https://example.com/a"
+
+
+def test_auth_policy_defaults_to_read_only():
+    site = SiteAuth.from_dict(SITE)
+    assert preflight_action(site, Action(type="goto", url=SITE["check_url"])) is None
+    assert preflight_action(site, Action(type="click", role="button", name="claim reward"))
+    assert preflight_action(site, Action(type="fill", selector="#password", value="secret"))
+    assert preflight_action(site, Action(type="goto", url="https://outside.example/"))
+
+
+def test_explicit_site_actions_still_require_no_submit_by_enter():
+    site = SiteAuth.from_dict({**SITE, "allow_actions": ["goto", "click", "press"]})
+    assert preflight_action(site, Action(type="click", role="link", name="My page")) is None
+    assert preflight_action(site, Action(type="press", key="Enter"))
+    with pytest.raises(ValueError):
+        SiteAuth.from_dict({**SITE, "allow_actions": ["made-up-action"]})
