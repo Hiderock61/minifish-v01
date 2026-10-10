@@ -5,7 +5,7 @@ TinyFishを丸ごと複製するものではなく、Web Agentの中心カラク
 ## 何が動くか
 
 ```text
-GOAL -> Observe -> Planner -> Action -> Guard -> Playwright -> Result -> Log -> Repeat
+GOAL -> Observe -> Planner -> Supervisor Gate -> Action -> Playwright -> Result -> Log -> Repeat
 ```
 
 観測にはURL、title、PlaywrightのARIA snapshot、画面本文を使用します。操作はPlaywrightで `goto / click / fill / press / back / wait` を実行します。
@@ -51,7 +51,7 @@ APIキーや利用可能モデルはリポジトリへ保存しないでくだ�
 - `models.py`: GOAL / Run / Observation / Action / Event
 - `browser.py`: Chromiumを動かす手足
 - `planner.py`: 次の一手を決める頭脳。AIなし版とOpenAI版を分離
-- `guard.py`: 数えれば分かるループを機械停止
+- `guard.py`: PLAN→ACTION間のSupervisor Gate。repeat / 404 / URL ping-pong / HUMAN GATEを決定論で判定
 - `runner.py`: 観測→判断→操作→再観測を回す心臓
 
 ## これはまだTinyFishと同じではない
@@ -77,3 +77,24 @@ MiniFish v0.2では、iPhone自体でChromiumを動かすのではなく、remot
 TinyFishとの差分表: `TINYFISH_DECOMPOSITION.md`
 
 > APIキー、Cookie、ブラウザProfileはrepositoryへcommitしない。
+
+
+## Supervisor Gate v0.1
+
+MiniFishを作る目的はTinyFishの完全コピーではなく、Agentの **PLAN → ACTION** 間を自分たちで所有し、実行前に司令塔を挟めるようにすること。
+
+現在の固定ルール:
+
+- 同じURLで同じACTIONが3回目 -> `STOP`
+- 404を2回観測 -> `STOP`
+- URLが A→B→A→B -> `REPLAN`
+- 購入・契約・削除・応募・支払・公開などの高影響クリック -> `HUMAN`
+- 同じGOAL / MODE / START URLの生存RUN -> APIが409で重複RUNを拒否
+
+`HUMAN` ではブラウザ操作を実行せず `WAITING` にする。人間承認後のresume APIは次段階。
+
+### 現在のゴール
+
+**MiniFishを「動く魚」から「司令塔付きWeb作業員」にする。**
+
+次の大きな段階は、Supervisor Gateの判定をSTATE LEDGER / HUMAN FACTへ接続し、ChatGPTから実Web仕事を任せても迷子・二重実行・高影響操作の暴走を防げる状態にすること。
