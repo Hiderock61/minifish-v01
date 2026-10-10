@@ -8,6 +8,11 @@
       "login_path_markers": [
         "/login",
         "/signin"
+      ],
+      "allow_actions": [
+        "goto",
+        "back",
+        "wait"
       ]
     }
   ]
