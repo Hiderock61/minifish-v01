@@ -45,5 +45,5 @@ def test_high_impact_click_requires_human():
 def test_safe_save_click_passes():
     g = SupervisorGate()
     obs = Observation(url="https://example.com/profile", title="Profile", aria_snapshot="", text_excerpt="")
-    decision, _ = g.check(Action(type="click", role="button", name="保存"), obs, [])
+    decision, _ = g.check(Action(type="click", role="button", name="保存", reason="submit form"), obs, [])
     assert decision == "PASS"
