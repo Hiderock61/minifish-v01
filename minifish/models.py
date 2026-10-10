@@ -66,6 +66,17 @@ class Event:
 
 
 @dataclass
+class LedgerEntry:
+    step: int
+    at: str
+    current_url: str
+    action_type: str
+    action_target: str
+    decision: str
+    result_summary: str
+
+
+@dataclass
 class RunState:
     goal: str
     start_url: str
@@ -77,6 +88,7 @@ class RunState:
     final_result: str | None = None
     error: str | None = None
     events: list[Event] = field(default_factory=list)
+    ledger: list[LedgerEntry] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
