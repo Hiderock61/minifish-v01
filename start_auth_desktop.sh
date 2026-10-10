@@ -24,6 +24,7 @@ fi
 # The VNC server binds to 127.0.0.1; the GitHub private-forwarded HTTPS
 # endpoint (6080) is the ONLY remote access gate. Never set it Public.
 cleanup() {
+  [[ -n "${proxy_pid:-}" ]] && kill "$proxy_pid" 2>/dev/null || true
   [[ -n "${vnc_pid:-}" ]] && kill "$vnc_pid" 2>/dev/null || true
   [[ -n "${xvfb_pid:-}" ]] && kill "$xvfb_pid" 2>/dev/null || true
 }
@@ -48,4 +49,6 @@ echo "3) In another Codespaces terminal: DISPLAY=$DISPLAY python auth_setup.py S
 echo "4) Log in to the visible Chromium browser; press ENTER in the terminal to verify/save"
 echo "5) Press Ctrl-C HERE to shut down the one-time desktop."
 echo "WARNING: This is a proof-of-concept login path, not a hardened password manager."
-websockify --web /usr/share/novnc "0.0.0.0:$WEB_PORT" "127.0.0.1:$RFB_PORT"
+websockify --web /usr/share/novnc "0.0.0.0:$WEB_PORT" "127.0.0.1:$RFB_PORT" &
+proxy_pid=$!
+wait "$proxy_pid"
