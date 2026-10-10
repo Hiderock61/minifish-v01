@@ -2,7 +2,7 @@
 # One-time Codespaces remote Chromium desktop for manual login on iPhone.
 # SECURITY: Forward port 6080 PRIVATE only. Never run this for strangers.
 set -euo pipefail
-export DISPLAY="${DISPLAY:-:99}"
+export DISPLAY="${MINIFISH_AUTH_DISPLAY:-:99}"
 RFB_PORT=5901
 WEB_PORT=6080
 
