@@ -9,7 +9,7 @@ import uuid
 
 from fastapi import BackgroundTasks, FastAPI, HTTPException
 from fastapi.responses import HTMLResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from minifish import Action, MiniFishRunner, OpenAIPlanner, ScriptedPlanner
 
@@ -251,6 +251,7 @@ class RunRequest(BaseModel):
     goal: str
     url: str | None = None
     mode: Literal["demo", "agent"] = "demo"
+    human_facts: list[str] = Field(default_factory=list)
 
 
 def snapshot_from_state(state: Any, *, mode: str, start_url: str) -> dict[str, Any]:
@@ -268,6 +269,8 @@ def snapshot_from_state(state: Any, *, mode: str, start_url: str) -> dict[str, A
         "result": state.final_result,
         "error": state.error,
         "events": events,
+        "ledger": [asdict(item) for item in state.ledger],
+        "human_facts": list(state.human_facts),
     }
 
 
@@ -316,6 +319,7 @@ def run_worker(run_id: str, request: RunRequest) -> None:
         start_url=start_url,
         start_html=start_html,
         run_id=run_id,
+        human_facts=request.human_facts,
     )
     save_snapshot(
         run_id,
@@ -376,6 +380,8 @@ async def create_run(request: RunRequest, background_tasks: BackgroundTasks) -> 
         "result": None,
         "error": None,
         "events": [],
+        "ledger": [],
+        "human_facts": list(request.human_facts),
     }
     with RUNS_LOCK:
         RUNS[run_id] = initial
