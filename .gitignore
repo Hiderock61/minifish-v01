@@ -7,3 +7,5 @@ run_logs/captures/
 run_logs/ai_captures/
 .venv/
 .DS_Store
+
+.minifish/
