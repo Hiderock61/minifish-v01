@@ -1,9 +1,9 @@
-# 🐟🔐 MiniFishログイン管理室 v0.1
+# 🐟🔐 MiniFishログイン管理室 v0.2
 
 ## 目的
 各サイトのログイン状態を混ぜずに再利用し、認証が無効なら AI Planner に画面を渡す前に **WAITING / AUTH_REQUIRED** で止める。
 
-これは **認証状態の保存と確認の基盤** であり、実際のポイ活サイトでの継続ログイン成功、サイトの自動化許可、iPhoneからの本人ログインはまだ未検証。
+これは **認証状態の保存と確認の基盤**。2026-10-11にCodespaces＋Chromebook＋noVNCの模擬会員ログイン保存・復元は人間の実操作で **PROVEN**。本物のポイ活サイトやiPhone Safariでのログインは未検証。
 
 ## STATE
 | 部品 | 状態 |
@@ -13,8 +13,8 @@
 | 認証済み判定（明示セレクタ） | IMPLEMENTED |
 | 保存なし/期限切れでWAITING | IMPLEMENTED（テスト要） |
 | 認証済みの生HTML/スクリーンショットをログへ残さない | IMPLEMENTED |
-| 人間がChromium内でログインするCLI | IMPLEMENTED、GUI必須 |
-| iPhoneのみでChromiumに手動ログイン | BLOCKED（別途安全なリモートGUIが必要） |
+| 人間がChromium内でログインするCLI | PROVEN（Codespaces/noVNC、模擬サイト） |
+| 遠隔Chromiumへの手動ログイン | PROVEN（Chromebook Chrome → noVNC）。iPhone SafariはUNKNOWN |
 | 実ポイ活サイトでログイン復元 | UNKNOWN |
 | 定期無人起動 | HOLD |
 
@@ -55,8 +55,8 @@
 `start_iphone.sh` はCodespaces内で **headless** のChromiumを起動する。
 iPhone Safariでポイ活サイトにログインしても、**Codespaces側ChromiumにCookieは移らない**。
 `auth_setup.py` の可視ブラウザ認証は、GUIのある信頼できる実行環境が必要。
-Codespacesで本人ログインをさせるリモートGUI/VNCは現段階で未実装。
-iPhone単体で完結したとは扱わない。
+Codespacesで手動ログインする遠隔GUI/noVNCはv0.2で実装し、Chromebookからの模擬サイト実操作で動作確認済み。
+iPhone単体で完結したとは**まだ**扱わない。
 
 ## セキュリティ
 - ポート8000は必ずPrivateのまま。操縦席にアプリ認証がまだないため、公開運用禁止。
@@ -85,9 +85,13 @@ iPhone単体で完結したとは扱わない。
 - テストを追加し、起動スクリプトのbash構文もCIで検査。
 
 ### 重大な制約
-- **iPhone Safari実機での接続、実際のポイ活サイトへのログイン、Codespacesの可視デスクトップ操作は未検品。**
+- **Codespacesの可視デスクトップ操作と模擬ログイン復元は、Chromebookから現地検品済み（PROVEN）。iPhone Safari実機と本物のポイ活サイトは未検証。**
 - 外部実サイトは規約・操作許可・ログイン成功セレクタを個別に確認する。
 - 操縦席のアプリ内独立認証、秘密ページのAI Plannerへの送信制限、無人実行は依然未解決。
 - ログイン時は一時的なprivate noVNCを使い、完了後に停止する。公開転送・第三者共有は厳禁。
 
 詳細: [IPHONE_AUTH_DESKTOP.md](./IPHONE_AUTH_DESKTOP.md)
+
+## 現地検品 2026-10-11
+
+**AUTH_VERIFIED → AUTH_OK → PASS** を実際のCodespaces Terminalで確認。写真を用いた本人現地検品。模擬会員サイトのみ。詳しい判定条件、検品の限界、次工程は [証拠票](docs/evidence/auth-mock-e2e-2026-10-11.md)。
