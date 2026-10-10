@@ -8,7 +8,7 @@ import time
 from .models import Action, Event, RunState, now_iso
 from .browser import PlaywrightBrowser
 from .planner import Planner
-from .guard import RunGuard
+from .guard import SupervisorGate
 
 
 class MiniFishRunner:
@@ -38,7 +38,7 @@ class MiniFishRunner:
         self.log_path = Path(log_path) if log_path else None
         self.on_event = on_event
         self.should_stop = should_stop
-        self.guard = RunGuard()
+        self.guard = SupervisorGate()
 
     def run(
         self,
@@ -110,6 +110,66 @@ class MiniFishRunner:
                         self._notify(state, event)
                         break
 
+                    if decision == "HUMAN":
+                        execution = {"ok": False, "human_required": True, "reason": reason}
+                        event = Event(
+                            step=step,
+                            at=now_iso(),
+                            before_url=before_url,
+                            observation={
+                                "url": observation.url,
+                                "title": observation.title,
+                                "aria_snapshot": observation.aria_snapshot,
+                                "text_excerpt": observation.text_excerpt,
+                                "screenshot": screenshot,
+                                "html_capture": html_capture,
+                            },
+                            proposed_action=action.__dict__,
+                            decision=f"HUMAN: {reason}",
+                            execution_result=execution,
+                            after_url=browser.current_url,
+                        )
+                        state.events.append(event)
+                        state.status = "WAITING"
+                        state.final_result = "human approval required"
+                        self._notify(state, event)
+                        break
+
+                    if decision == "REPLAN":
+                        execution = {"ok": False, "replan": True, "reason": reason}
+                        event = Event(
+                            step=step,
+                            at=now_iso(),
+                            before_url=before_url,
+                            observation={
+                                "url": observation.url,
+                                "title": observation.title,
+                                "aria_snapshot": observation.aria_snapshot,
+                                "text_excerpt": observation.text_excerpt,
+                                "screenshot": screenshot,
+                                "html_capture": html_capture,
+                            },
+                            proposed_action=action.__dict__,
+                            decision=f"REPLAN: {reason}",
+                            execution_result=execution,
+                            after_url=browser.current_url,
+                        )
+                        state.events.append(event)
+                        history.append(
+                            {
+                                "step": step,
+                                "url": observation.url,
+                                "action": action.__dict__,
+                                "after_url": browser.current_url,
+                                "signature": signature,
+                                "page_404": page_404,
+                                "decision": "REPLAN",
+                                "result": execution,
+                            }
+                        )
+                        self._notify(state, event)
+                        continue
+
                     if action.type == "done":
                         execution = {"ok": True, "terminal": True}
                         state.status = "COMPLETED"
@@ -152,7 +212,7 @@ class MiniFishRunner:
                         }
                     )
 
-                    if state.status in ("COMPLETED", "FAILED", "CANCELLED"):
+                    if state.status in ("WAITING", "COMPLETED", "FAILED", "CANCELLED"):
                         break
                 else:
                     state.status = "FAILED"
