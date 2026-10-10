@@ -117,3 +117,20 @@ bash iphone_login_demo.sh
 この装置は**模擬ログイン専用**で、実アカウントのID/パスワードは一切入力しない。
 
 詳しくは [IPHONE_AUTH_DESKTOP.md](IPHONE_AUTH_DESKTOP.md) / [AUTH_ROOM.md](AUTH_ROOM.md)。実機Safariでの検品と本物のサイト接続は別工程。
+
+## 🐟📝 フィッシュでノート｜下書き自動運搬の第1工区
+
+ChatGPTやスマホで書いた原稿（Z軸、じーぴーてえー等）を記事パッケージにし、MiniFishが編集フォームへタイトルと本文を入れ、**下書き保存を確認する**装置を追加。
+
+**無料の模擬テスト：**
+
+```bash
+python -m minifish.note_conveyor examples/note_job_example.json --mock
+```
+
+MiniFishのiPhone操縦席（`bash start_iphone.sh`、PRIVATEポート8000）にも
+「📝 フィッシュでノート｜下書き搬送 DEMO」の入力欄とボタンを追加。
+**このDEMOはnote.comには一切送信しない。**
+
+実サイトのnoteログイン、編集欄セレクタ、下書き保存は未検証。
+公開や自動投稿は今回実装しない。詳しくは [NOTE_CONVEYOR.md](NOTE_CONVEYOR.md)。
