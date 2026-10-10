@@ -10,7 +10,13 @@ from .models import Action, Observation
 
 class Planner(ABC):
     @abstractmethod
-    def next_action(self, goal: str, observation: Observation, history: list[dict[str, Any]]) -> Action:
+    def next_action(
+        self,
+        goal: str,
+        observation: Observation,
+        history: list[dict[str, Any]],
+        human_facts: list[str] | None = None,
+    ) -> Action:
         raise NotImplementedError
 
 
@@ -21,7 +27,13 @@ class ScriptedPlanner(Planner):
         self.actions = list(actions)
         self.i = 0
 
-    def next_action(self, goal: str, observation: Observation, history: list[dict[str, Any]]) -> Action:
+    def next_action(
+        self,
+        goal: str,
+        observation: Observation,
+        history: list[dict[str, Any]],
+        human_facts: list[str] | None = None,
+    ) -> Action:
         if self.i >= len(self.actions):
             return Action(type="done", result="Script completed", reason="No scripted actions left")
         a = self.actions[self.i]
@@ -45,7 +57,13 @@ class OpenAIPlanner(Planner):
         from openai import OpenAI
         self.client = OpenAI()
 
-    def next_action(self, goal: str, observation: Observation, history: list[dict[str, Any]]) -> Action:
+    def next_action(
+        self,
+        goal: str,
+        observation: Observation,
+        history: list[dict[str, Any]],
+        human_facts: list[str] | None = None,
+    ) -> Action:
         action_contract = {
             "goto": {"type": "goto", "url": "https://...", "reason": "..."},
             "click": {"type": "click", "role": "button|link|textbox|...", "name": "visible accessible name", "reason": "..."},
@@ -63,6 +81,10 @@ Return one JSON object only, no markdown.
 
 GOAL:
 {goal}
+
+HUMAN-CONFIRMED FACTS:
+{json.dumps(human_facts or [], ensure_ascii=False)}
+Treat these facts as authoritative constraints. Do not re-ask or rediscover them unless the current page directly contradicts them.
 
 CURRENT OBSERVATION:
 {observation.compact()}
