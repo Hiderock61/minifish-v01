@@ -164,6 +164,8 @@ def finish(result):
         lines.append(f"- {'✅' if val else '❌'} {name}: {val}")
     for i, item in enumerate(result.get("turns", [])):
         lines.append(f"- GEN{i} {item['phase']}: formal_pass={item['evaluation']['formal_pass']} (human quality: unverified)")
+        sample = " ".join(item["assistant"].split())[:520]
+        lines.append(f"  - 回答抜粋: {sample}")
     lines.extend([
         "",
         "※ Browser probe PASS does **not** prove the AI has actually replied.",
