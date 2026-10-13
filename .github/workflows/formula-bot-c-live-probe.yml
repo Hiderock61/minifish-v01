@@ -130,3 +130,39 @@ jobs:
           CODE="$(cat /tmp/formula-c-auth.txt 2>/dev/null || echo NOT_AVAILABLE)"
           gh api "repos/$GITHUB_REPOSITORY/issues/14/comments" \
             -f body="FORMULA_C_AUTH_HTTP=$CODE; model_generation_calls=0; [Actions evidence](https://github.com/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID)"
+
+  model-check:
+    if: >-
+      github.event.issue.number == 14 &&
+      github.event.comment.user.login == 'Hiderock61' &&
+      github.event.comment.body == '/formula-c-model-check'
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Check model access with GET (no generation)
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY || secrets.OPEANAI_API_KEY }}
+        run: |
+          python - <<'PY'
+          import os,urllib.request,urllib.error
+          from pathlib import Path
+          key=os.getenv('OPENAI_API_KEY','')
+          code='NO_SECRET'
+          if key:
+              req=urllib.request.Request('https://api.openai.com/v1/models/gpt-4o-mini',
+                  headers={'Authorization':'Bearer '+key},method='GET')
+              try:
+                  with urllib.request.urlopen(req,timeout=15) as resp:code=str(resp.status)
+              except urllib.error.HTTPError as ex:code=str(ex.code)
+              except Exception as ex:code='NETWORK_'+type(ex).__name__
+          Path('/tmp/c-model-code.txt').write_text(code)
+          print('FORMULA_C_MODEL_HTTP='+code)
+          PY
+      - name: Write safe model check
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          CODE="$(cat /tmp/c-model-code.txt 2>/dev/null || echo UNKNOWN)"
+          gh api "repos/$GITHUB_REPOSITORY/issues/14/comments" \
+            -f body="FORMULA_C_MODEL_HTTP=$CODE; model_generation_calls=0; [Actions evidence](https://github.com/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID)"
