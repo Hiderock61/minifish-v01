@@ -87,7 +87,7 @@ def generate(request,dataset):
 
 def run(mode):
     ready=bool(os.environ.get('OPENAI_API_KEY'))
-    if mode!='live':
+    if mode not in ('live','live_one'):
         checks=[
            (evaluate('=SUMIF(B2:B4,"東京",C2:C4)',DATASETS[0]),170),
            (evaluate('=SUMIF(B2:B4,"東京",C2:C4)',DATASETS[1]),30),
@@ -100,7 +100,8 @@ def run(mode):
     if not ready or os.getenv('FORMULA_C_LIVE_APPROVED')!='YES':
         return {'state':'BLOCKED','secret_present':ready,'api_calls':0}
     reports=[]
-    for case_id,request,expected in CASES:
+    selected=CASES if mode=='live' else CASES[:1]
+    for case_id,request,expected in selected:
         row={'id':case_id,'state':'ERROR'}
         try:
             formula=generate(request,DATASETS[0])
@@ -123,7 +124,7 @@ def run(mode):
             row.update({'state':'UNVERIFIED','reason':type(err).__name__})
         reports.append(row)
     return {'state':'PASS' if all(r['state']=='PASS_BOTH' for r in reports) else 'PARTIAL_OR_FAIL',
-            'cases':reports,'max_api_attempts':3,'excel_verified':False,
+            'cases':reports,'max_api_attempts':len(selected),'excel_verified':False,
             'verification':'independent_restricted_subset'}
 
 if __name__=='__main__':
