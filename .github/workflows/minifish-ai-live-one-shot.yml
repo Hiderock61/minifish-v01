@@ -21,13 +21,11 @@ jobs:
       github.event.comment.body == '/ai-tower-live-once-approved'
     runs-on: ubuntu-latest
     timeout-minutes: 8
-    env:
-      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY || secrets.OPEANAI_API_KEY }}
-      OPENAI_MODEL: gpt-4.1-mini
-      MINIFISH_AI_LIVE_CONSENT: 'yes'
-      GH_TOKEN: ${{ github.token }}
     steps:
       - name: Check presence of secret and enforce durable one-shot gate
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY || secrets.OPEANAI_API_KEY }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           python - <<'PY'
           import os
@@ -56,10 +54,16 @@ jobs:
           python -m pip install -r requirements.txt
           python -m playwright install --with-deps chromium
       - name: Live AI decisions (4 max) on internal mock HTML only
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY || secrets.OPEANAI_API_KEY }}
+          OPENAI_MODEL: gpt-4.1-mini
+          MINIFISH_AI_LIVE_CONSENT: 'yes'
         run: |
           PYTHONPATH=. python -m minifish.ai_tower_demo --mode live --allow-billable
       - name: Return sanitized result only
         if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           python - <<'PY'
           import json
