@@ -91,3 +91,42 @@ jobs:
           PY
           printf '\n[GitHub Actions evidence](https://github.com/%s/actions/runs/%s)\n' "$GITHUB_REPOSITORY" "$GITHUB_RUN_ID" >> /tmp/formula-c-safe.md
           gh api "repos/$GITHUB_REPOSITORY/issues/14/comments" -f body="$(cat /tmp/formula-c-safe.md)"
+
+  auth-check:
+    if: >-
+      github.event.issue.number == 14 &&
+      github.event.comment.user.login == 'Hiderock61' &&
+      github.event.comment.body == '/formula-c-key-auth-check'
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Check API authentication with GET models (no model generation)
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY || secrets.OPEANAI_API_KEY }}
+        run: |
+          python - <<'PY'
+          import json, os, urllib.request, urllib.error
+          from pathlib import Path
+          token=os.environ.get('OPENAI_API_KEY','')
+          status='NO_SECRET'
+          if token:
+              req=urllib.request.Request('https://api.openai.com/v1/models',
+                  headers={'Authorization':'Bearer '+token},method='GET')
+              try:
+                  with urllib.request.urlopen(req, timeout=15) as resp:
+                      status=str(resp.status)
+              except urllib.error.HTTPError as exc:
+                  status=str(exc.code)
+              except Exception as exc:
+                  status='NETWORK_OR_CLIENT_ERROR_'+type(exc).__name__
+          Path('/tmp/formula-c-auth.txt').write_text(status)
+          print('FORMULA_C_AUTH_HTTP='+status)
+          PY
+      - name: Report status only (no secret)
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          CODE="$(cat /tmp/formula-c-auth.txt 2>/dev/null || echo NOT_AVAILABLE)"
+          gh api "repos/$GITHUB_REPOSITORY/issues/14/comments" \
+            -f body="FORMULA_C_AUTH_HTTP=$CODE; model_generation_calls=0; [Actions evidence](https://github.com/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID)"
