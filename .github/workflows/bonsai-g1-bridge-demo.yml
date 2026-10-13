@@ -1,0 +1,117 @@
+name: BONSaY G1 MiniFish safe bridge demo
+
+on:
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: bonsai-g1-safe-issue-9
+  cancel-in-progress: false
+
+jobs:
+  g1-demo:
+    if: >-
+      github.event.issue.number == 9 &&
+      github.event.issue.user.login == 'Hiderock61' &&
+      github.event.comment.user.login == 'Hiderock61' &&
+      github.event.comment.body == '/bonsai-g1-demo'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Confirm acceptance to the exact issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api "repos/$GITHUB_REPOSITORY/issues/9/comments" -f body="🐟 G1_ACCEPTED: isolated Actions worker received the exact safe demo command."
+      - name: Install existing MiniFish dependencies
+        run: |
+          python -m pip install -r requirements.txt
+          python -m playwright install --with-deps chromium
+      - name: Run existing MiniFish Bridge DEMO (internal HTML only)
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          from bridge_worker import run_job
+
+          output = Path("bonsai_g1_evidence")
+          output.mkdir(exist_ok=True)
+          result = run_job({
+              "number": 9,
+              "body": json.dumps({
+                  "mode": "demo",
+                  "goal": "G1 SAFE DEMO ONLY: open the built-in profile mock, enter a synthetic display name and save. No external URLs, authentication, API, or payment."
+              }, ensure_ascii=False),
+          })
+          runlog = Path(".minifish/runs/issue_9/run.json")
+          observed = False
+          if runlog.exists():
+              evidence = json.loads(runlog.read_text(encoding="utf-8"))
+              observed = any(
+                  ("保存完了" in str(event.get("observation", {}).get("text_excerpt", "")))
+                  for event in evidence.get("events", [])
+              )
+          status = "PASS" if (result.get("status") == "COMPLETED" and observed and result.get("run_id")) else "FAIL"
+          payload = {
+              "status": status,
+              "mode": "demo",
+              "execution": "github_actions_single_issue",
+              "run_id": result.get("run_id"),
+              "runner_status": result.get("status"),
+              "steps": result.get("step_count"),
+              "result": result.get("result"),
+              "error": result.get("error"),
+              "mock_save_observed": observed,
+              "external_write": False,
+              "ai_api": False,
+          }
+          (output / "result.json").write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+          print(json.dumps(payload, ensure_ascii=False, indent=2))
+          if status != "PASS":
+              raise SystemExit(1)
+          PY
+      - name: Save run and browser evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bonsai-g1-demo-${{ github.run_id }}
+          path: |
+            bonsai_g1_evidence/
+            .minifish/runs/issue_9/
+          retention-days: 7
+          if-no-files-found: warn
+      - name: Return status and run_id to issue
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          p = Path("bonsai_g1_evidence/result.json")
+          data = json.loads(p.read_text(encoding="utf-8")) if p.exists() else {
+              "status": "FAIL", "error": "worker failed before writing the result"
+          }
+          status = data.get("status", "FAIL")
+          lines = [
+              f"G1_RESULT status={status}",
+              f"- run_id: {data.get('run_id') or 'NONE'}",
+              f"- runner_status: {data.get('runner_status') or 'UNKNOWN'}",
+              f"- steps: {data.get('steps', 'UNKNOWN')}",
+              f"- mock_save_observed: {data.get('mock_save_observed', False)}",
+              f"- error: {data.get('error') or 'none'}",
+              "- Worker: GitHub Actions isolated one-shot (not a Codespaces resident process)",
+              "- Changed BONSaY files: 0",
+          ]
+          Path("bonsai_g1_report.md").write_text("\n".join(lines), encoding="utf-8")
+          PY
+          printf '\n[Execution evidence](https://github.com/%s/actions/runs/%s)\n' "$GITHUB_REPOSITORY" "$GITHUB_RUN_ID" >> bonsai_g1_report.md
+          gh api "repos/$GITHUB_REPOSITORY/issues/9/comments" -f body="$(cat bonsai_g1_report.md)"
