@@ -166,3 +166,58 @@ jobs:
           CODE="$(cat /tmp/c-model-code.txt 2>/dev/null || echo UNKNOWN)"
           gh api "repos/$GITHUB_REPOSITORY/issues/14/comments" \
             -f body="FORMULA_C_MODEL_HTTP=$CODE; model_generation_calls=0; [Actions evidence](https://github.com/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID)"
+
+  debug-one:
+    if: >-
+      github.event.issue.number == 14 &&
+      github.event.comment.user.login == 'Hiderock61' &&
+      github.event.comment.body == '/formula-c-debug-one-approved'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: New explicit approval and one-shot protection
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY || secrets.OPEANAI_API_KEY }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          test -n "$OPENAI_API_KEY" || { echo "BLOCKED: secret unavailable"; exit 1; }
+          gh api "repos/$GITHUB_REPOSITORY/issues/14/comments?per_page=100" > /tmp/formula-c-comments.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          comments=json.loads(Path('/tmp/formula-c-comments.json').read_text())
+          if any('FORMULA_C_DEBUG_STARTED_RUN=' in c.get('body','') for c in comments):
+              raise SystemExit('BLOCKED: one-prompt diagnostic already attempted')
+          PY
+          gh api "repos/$GITHUB_REPOSITORY/issues/14/comments" \
+            -f body="FORMULA_C_DEBUG_STARTED_RUN=$GITHUB_RUN_ID (single-request guard armed)"
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: One live prompt with safe HTTP error classification
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY || secrets.OPEANAI_API_KEY }}
+          OPENAI_MODEL: gpt-4o-mini
+          FORMULA_C_LIVE_APPROVED: 'YES'
+        run: python formula-bot-c/g1_probe.py live_one > /tmp/formula-c-debug.json
+      - name: Return only sanitized HTTP diagnostic
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          f=Path('/tmp/formula-c-debug.json')
+          d=json.loads(f.read_text()) if f.is_file() else {}
+          lines=[
+              'FORMULA_C_ONE_PROMPT_STATE='+str(d.get('state','BLOCKED_OR_ERROR')),
+              'case_statuses='+str([(x.get('id'),x.get('state')) for x in d.get('cases',[])]),
+              'errors='+str([(x.get('reason',''),x.get('api_error','')) for x in d.get('cases',[])]),
+              'max_model_requests=1',
+              'No secret or raw API response included']
+          Path('/tmp/c-one-safe.md').write_text('\n'.join(lines))
+          PY
+          printf '\n[GitHub Actions evidence](https://github.com/%s/actions/runs/%s)\n' "$GITHUB_REPOSITORY" "$GITHUB_RUN_ID" >> /tmp/c-one-safe.md
+          gh api "repos/$GITHUB_REPOSITORY/issues/14/comments" -f body="$(cat /tmp/c-one-safe.md)"
