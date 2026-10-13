@@ -1,0 +1,82 @@
+name: MiniFish live AI one-shot - explicit approval only
+
+on:
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: minifish-ai-live-once-issue-13
+  cancel-in-progress: false
+
+jobs:
+  ai-live:
+    if: >-
+      github.event.issue.number == 13 &&
+      github.event.issue.user.login == 'Hiderock61' &&
+      github.event.comment.user.login == 'Hiderock61' &&
+      github.event.comment.body == '/ai-tower-live-once-approved'
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    env:
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY || secrets.OPEANAI_API_KEY }}
+      OPENAI_MODEL: gpt-4.1-mini
+      MINIFISH_AI_LIVE_CONSENT: 'yes'
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Check presence of secret and enforce durable one-shot gate
+        run: |
+          python - <<'PY'
+          import os
+          if not os.getenv("OPENAI_API_KEY"):
+              raise SystemExit("BLOCKED: API secret is missing")
+          PY
+          gh api "repos/$GITHUB_REPOSITORY/issues/13/comments?per_page=100" > /tmp/tower-comments.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          comments = json.loads(Path("/tmp/tower-comments.json").read_text())
+          # This mark is written before any live API call. A later rerun
+          # or duplicate command must not spend a second time.
+          if any("AI_TOWER_LIVE_STARTED_RUN=" in str(c.get("body", ""))
+                 for c in comments):
+              raise SystemExit("BLOCKED: live trial already attempted")
+          PY
+          gh api "repos/$GITHUB_REPOSITORY/issues/13/comments" \
+            -f body="AI_TOWER_LIVE_STARTED_RUN=$GITHUB_RUN_ID (one-shot gate armed before billable call)"
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install MiniFish and internal mock-browser runtime
+        run: |
+          python -m pip install -r requirements.txt
+          python -m playwright install --with-deps chromium
+      - name: Live AI decisions (4 max) on internal mock HTML only
+        run: |
+          PYTHONPATH=. python -m minifish.ai_tower_demo --mode live --allow-billable
+      - name: Return sanitized result only
+        if: always()
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          p = Path("ai_tower_runs/BONSAI_AI_TOWER_001/public_report.json")
+          d = json.loads(p.read_text(encoding="utf-8")) if p.is_file() else {}
+          lines = [
+              "AI_TOWER_LIVE_RESULT=" + str(d.get("result", "UNKNOWN")),
+              "run_id=" + str(d.get("run_id", "NOT_AVAILABLE")),
+              "live_ai_verified=" + str(d.get("live_ai_verified", False)),
+              "api_calls_attempted=" + str(d.get("api_calls", "UNKNOWN")),
+              "supervisor_pass=" + str(d.get("supervisor_pass", False)),
+              "saved_visible=" + str(d.get("saved_visible", False)),
+              "error_layer=" + str(d.get("error_layer", "NO_REPORT")),
+              "Raw model text, key values and browser captures are not published.",
+          ]
+          Path("live_safe_result.md").write_text("\n".join(lines), encoding="utf-8")
+          PY
+          printf '\n[Execution log](https://github.com/%s/actions/runs/%s)\n' "$GITHUB_REPOSITORY" "$GITHUB_RUN_ID" >> live_safe_result.md
+          gh api "repos/$GITHUB_REPOSITORY/issues/13/comments" -f body="$(cat live_safe_result.md)"
