@@ -1,0 +1,74 @@
+name: MiniFish Command Tower v0.1 safe demo
+
+on:
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: minifish-command-tower-issue-11
+  cancel-in-progress: false
+
+jobs:
+  command-tower:
+    if: >-
+      github.event.issue.number == 11 &&
+      github.event.issue.user.login == 'Hiderock61' &&
+      github.event.comment.user.login == 'Hiderock61' &&
+      github.event.comment.body == '/minifish-tower-demo'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Report receipt
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api "repos/$GITHUB_REPOSITORY/issues/11/comments" -f body="TOWER_ACCEPTED: safe mock mission accepted for execution."
+      - name: Install existing MiniFish browser runtime
+        run: |
+          python -m pip install -r requirements.txt
+          python -m playwright install --with-deps chromium
+      - name: Test deterministic command tower policies
+        run: PYTHONPATH=. python -m pytest -q tests/test_command_tower.py
+      - name: Execute one command tower demo mission
+        run: PYTHONPATH=. python -m minifish.tower_demo
+      - name: Preserve mock-only evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: minifish-command-tower-${{ github.run_id }}
+          path: command_tower_runs/BONSAI_TOWER_001/
+          retention-days: 7
+          if-no-files-found: warn
+      - name: Return public status with evidence URL
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          p = Path("command_tower_runs/BONSAI_TOWER_001/public_report.json")
+          report = json.loads(p.read_text(encoding="utf-8")) if p.is_file() else {}
+          passed = report.get("result") == "PASS"
+          note = "\n".join([
+              "TOWER_RESULT status=" + ("PASS" if passed else "FAIL"),
+              "run_id: " + str(report.get("run_id") or "NONE"),
+              "steps: " + str(report.get("steps", "unknown")),
+              "saved_visible: " + str(report.get("checks", {}).get("saved_visible", False)),
+              "supervisor_pass: " + str(report.get("checks", {}).get("supervisor_decisions_all_pass", False)),
+              "ai_planner: " + report.get("ai_planner", "NOT_ACTIVATED"),
+              "api_calls: 0, paid_calls: 0, external_writes: 0",
+              "source: MiniFish control tower -> ScriptedPlanner -> SupervisorGate -> MiniFishRunner -> Playwright",
+          ])
+          Path("tower_issue_report.md").write_text(note, encoding="utf-8")
+          PY
+          printf '\n[Actions evidence](https://github.com/%s/actions/runs/%s)\n' "$GITHUB_REPOSITORY" "$GITHUB_RUN_ID" >> tower_issue_report.md
+          gh api "repos/$GITHUB_REPOSITORY/issues/11/comments" -f body="$(cat tower_issue_report.md)"
