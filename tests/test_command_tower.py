@@ -1,4 +1,6 @@
 from pathlib import Path
+import os
+import pytest
 
 from minifish.command_tower import Mission, MiniFishCommandTower
 
@@ -23,6 +25,7 @@ def test_blocked_mission_has_no_io(tmp_path):
     assert not list(Path(tmp_path).iterdir())
 
 
+@pytest.mark.skipif(os.getenv("MINIFISH_BROWSER_E2E") != "1", reason="Chromium installed only in E2E workflow")
 def test_safe_full_mission_and_local_duplicate(tmp_path):
     tower = MiniFishCommandTower()
     order = Mission(job_id="BONSAI_TOWER_001", goal="verify local mock",
