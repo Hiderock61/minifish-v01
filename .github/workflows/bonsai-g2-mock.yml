@@ -1,0 +1,72 @@
+name: BONSaY G2 safe API-adapter mock
+
+on:
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: bonsai-g2-mock-issue-10
+  cancel-in-progress: false
+
+jobs:
+  mock:
+    if: >-
+      github.event.issue.number == 10 &&
+      github.event.issue.user.login == 'Hiderock61' &&
+      github.event.comment.user.login == 'Hiderock61' &&
+      github.event.comment.body == '/bonsai-g2-mock'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Receive isolated one-shot test command
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh api "repos/$GITHUB_REPOSITORY/issues/10/comments" -f body="🐟 G2_MOCK_ACCEPTED: issue → Actions command accepted; NO live OpenAI API call."
+      - name: Install existing test dependencies
+        run: python -m pip install pytest
+      - name: Run focused no-cost G2 tests
+        run: PYTHONPATH=. python -m pytest -q tests/test_bonsai_g2_probe.py
+      - name: Run exact one-input mock transport
+        run: PYTHONPATH=. python -m minifish.bonsai_g2_probe --mode mock
+      - name: Store non-private mock-only evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bonsai-g2-mock-${{ github.run_id }}
+          path: bonsai_g2_evidence/
+          retention-days: 7
+          if-no-files-found: warn
+      - name: Return result to Issue
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          p = Path("bonsai_g2_evidence/result.json")
+          d = json.loads(p.read_text(encoding="utf-8")) if p.exists() else {}
+          okay = d.get("status") == "PASS" and d.get("api_called") is False and d.get("mode") == "mock"
+          msg = [
+            f"G2_MOCK_RESULT status={'PASS' if okay else 'FAIL'}",
+            f"- run_id: {d.get('run_id', 'none')}",
+            f"- model: MOCK ONLY (not ChatGPT web and not live API)",
+            f"- single_call: {d.get('checks', {}).get('single_call', False)}",
+            f"- ready_text: {d.get('checks', {}).get('fixed_ready_returned', False)}",
+            "- api_called: false",
+            "- billable_request: none",
+            "- live ChatGPT API adapter status: NOT TESTED",
+            "- BONSaY runtime/site changes: none",
+          ]
+          Path("g2_public_report.md").write_text("\n".join(msg), encoding="utf-8")
+          PY
+          printf '\n[Actions run](https://github.com/%s/actions/runs/%s)\n' "$GITHUB_REPOSITORY" "$GITHUB_RUN_ID" >> g2_public_report.md
+          gh api "repos/$GITHUB_REPOSITORY/issues/10/comments" -f body="$(cat g2_public_report.md)"
