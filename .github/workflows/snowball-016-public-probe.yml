@@ -1,0 +1,51 @@
+name: MiniFish SNOWBALL 016 read-only public listing
+
+on:
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: minifish-snowball-016
+  cancel-in-progress: false
+
+jobs:
+  public-observation:
+    if: github.event.issue.number == 8 && github.event.issue.user.login == 'Hiderock61' && github.event.comment.user.login == 'Hiderock61' && github.event.comment.body == '/snowball-016-probe'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install existing MiniFish and Chromium
+        run: |
+          python -m pip install -r requirements.txt
+          python -m playwright install --with-deps chromium
+      - name: Observe only the public request page
+        run: python -m minifish.snowball_016_observe
+      - name: Save observation evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: snowball-016-public-view
+          path: snowball_016_capture/
+          retention-days: 7
+          if-no-files-found: warn
+      - name: Report observed or blocked without assertions about products
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p snowball_016_capture
+          if test -f snowball_016_capture/report.md; then
+            cp snowball_016_capture/report.md snowball_016_capture/post.md
+          else
+            printf 'MiniFish browser probe did not produce a result. Treat as HOLD, not as a missing listing.\n' > snowball_016_capture/post.md
+          fi
+          printf '\n[Workflow evidence](https://github.com/%s/actions/runs/%s)\n' "$GITHUB_REPOSITORY" "$GITHUB_RUN_ID" >> snowball_016_capture/post.md
+          gh api "repos/$GITHUB_REPOSITORY/issues/8/comments" -f body="$(cat snowball_016_capture/post.md)"
