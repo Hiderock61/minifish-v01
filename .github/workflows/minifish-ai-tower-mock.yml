@@ -1,0 +1,76 @@
+name: MiniFish AI-tower bounded mock trial
+
+on:
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: minifish-ai-tower-issue-12
+  cancel-in-progress: false
+
+jobs:
+  bounded-ai:
+    if: >-
+      github.event.issue.number == 12 &&
+      github.event.issue.user.login == 'Hiderock61' &&
+      github.event.comment.user.login == 'Hiderock61' &&
+      github.event.comment.body == '/ai-tower-mock'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Receive mission order
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api "repos/$GITHUB_REPOSITORY/issues/12/comments" -f body="AI_TOWER_ACCEPTED: offline model-format fixture only. Actual AI API NOT invoked."
+      - name: Install MiniFish browser runtime
+        run: |
+          python -m pip install -r requirements.txt
+          python -m playwright install --with-deps chromium
+      - name: Validate bounded AI-parsing policies and browser integration
+        env:
+          MINIFISH_BROWSER_E2E: '1'
+        run: PYTHONPATH=. python -m pytest -q tests/test_ai_tower.py
+      - name: Execute local model-format trial once
+        run: PYTHONPATH=. python -m minifish.ai_tower_demo --mode mock
+      - name: Retain mock-only evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ai-tower-mock-${{ github.run_id }}
+          path: ai_tower_runs/BONSAI_AI_TOWER_001/
+          retention-days: 7
+          if-no-files-found: warn
+      - name: Return result
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          p = Path("ai_tower_runs/BONSAI_AI_TOWER_001/public_report.json")
+          x = json.loads(p.read_text()) if p.exists() else {}
+          lines = [
+              f"AI_TOWER_MOCK_RESULT status={x.get('result', 'FAIL')}",
+              f"- run_id: {x.get('run_id', 'NONE')}",
+              f"- steps: {x.get('steps', 'UNKNOWN')}",
+              f"- mocked_model_calls: {x.get('mock_model_calls', 0)}",
+              f"- openai_api_calls: {x.get('api_calls', 0)}",
+              f"- saved_visible: {x.get('saved_visible', False)}",
+              f"- supervisor_pass: {x.get('supervisor_pass', False)}",
+              f"- LIVE_AI_VERIFIED: {x.get('live_ai_verified', False)}",
+              "- note: simulated model JSON, NOT live AI inference",
+          ]
+          Path("ai_tower_report.md").write_text("\n".join(lines), encoding="utf-8")
+          PY
+          printf '\n[GitHub Actions evidence](https://github.com/%s/actions/runs/%s)\n' "$GITHUB_REPOSITORY" "$GITHUB_RUN_ID" >> ai_tower_report.md
+          gh api "repos/$GITHUB_REPOSITORY/issues/12/comments" -f body="$(cat ai_tower_report.md)"
