@@ -13,6 +13,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 import json
+import re
 
 from .models import Action
 from .planner import ScriptedPlanner
@@ -45,6 +46,8 @@ class MiniFishCommandTower:
     def preflight(mission: Mission) -> TowerDecision:
         if not mission.job_id.strip() or not mission.goal.strip():
             return TowerDecision("STOP", "MISSING_JOB_ID_OR_GOAL")
+        if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_-]{0,63}", mission.job_id):
+            return TowerDecision("STOP", "INVALID_JOB_ID")
         if mission.max_paid_calls != 0:
             return TowerDecision("HUMAN", "API_BUDGET_NOT_AUTHORIZED")
         if mission.action_class != "local_demo":
