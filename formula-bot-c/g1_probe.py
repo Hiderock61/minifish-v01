@@ -109,6 +109,16 @@ def run(mode):
                 actual=[evaluate(formula,d) for d in DATASETS]
                 row.update({'state':'PASS_BOTH' if actual==list(expected) else 'FAIL_SAMPLE',
                             'formula':formula,'actual':actual})
+        except urllib.error.HTTPError as err:
+            # Store only status and standardized error identifier, never the response body.
+            api_error='unknown'
+            try:
+                raw=json.loads(err.read(4096).decode('utf-8'))
+                candidate=raw.get('error',{}).get('code') or raw.get('error',{}).get('type') or 'unknown'
+                api_error=re.sub(r'[^a-zA-Z0-9_]+','_',str(candidate))[:48]
+            except (ValueError,UnicodeError,AttributeError):
+                pass
+            row.update({'state':'UNVERIFIED','reason':'HTTP_'+str(err.code),'api_error':api_error})
         except (ValueError,KeyError,TypeError,urllib.error.URLError,TimeoutError) as err:
             row.update({'state':'UNVERIFIED','reason':type(err).__name__})
         reports.append(row)
