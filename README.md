@@ -98,3 +98,10 @@ MiniFishを作る目的はTinyFishの完全コピーではなく、Agentの **PL
 **MiniFishを「動く魚」から「司令塔付きWeb作業員」にする。**
 
 次の大きな段階は、Supervisor Gateの判定をSTATE LEDGER / HUMAN FACTへ接続し、ChatGPTから実Web仕事を任せても迷子・二重実行・高影響操作の暴走を防げる状態にすること。
+
+
+## 🛰️ 司令塔ブラウザ｜ChatGPTと接続する無料のREAD ONLY経路
+
+ChatGPTのGitHub連携 → Issue指令 → GitHub Actions → MiniFish監督付きChromium → 結果コメントの実運用経路です。認証不要の登録済み公開ページだけを読みます。OpenAI API課金、Webサイトへの投稿、ログイン操作は行いません。
+
+iPhoneだけの使用方法・許可サイト・受入条件・未実装機能は [司令塔操縦ガイド](docs/COMMAND_CENTER_V1.md) に明記。

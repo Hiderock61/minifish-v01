@@ -15,6 +15,7 @@ from typing import Any
 import json
 import re
 
+from .public_sites import site_for_url
 from .models import Action
 from .planner import ScriptedPlanner
 from .runner import MiniFishRunner
@@ -67,9 +68,9 @@ class MiniFishCommandTower:
             return TowerDecision("STOP", "INVALID_JOB_ID")
         if not isinstance(goal, str) or not 1 <= len(goal.strip()) <= 200:
             return TowerDecision("STOP", "INVALID_READ_ONLY_GOAL")
-        if url not in ("https://example.com", "https://example.com/"):
+        if site_for_url(url) is None:
             return TowerDecision("STOP", "URL_NOT_ALLOWLISTED")
-        return TowerDecision("PASS", "PUBLIC_READ_ONLY_FIXED_URL")
+        return TowerDecision("PASS", "PUBLIC_READ_ONLY_REGISTERED_SITE")
 
     def execute(self, mission: Mission) -> dict[str, Any]:
         # Check duplicate BEFORE side effects. A future remote worker needs
