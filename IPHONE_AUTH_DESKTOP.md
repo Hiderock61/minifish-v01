@@ -7,7 +7,7 @@
 ## 0. 原則
 - GitHub Codespacesの **6080番ポートは必ずPRIVATE**。公開すると、ログイン画面や操作中の内容を第三者に見られる危険がある。
 - noVNCのVNC内部ポート5901は127.0.0.1のみ。6080番はGitHubのprivate HTTPS転送がアクセス制御を担当する。
-- 今回の簡易noVNCには独立したログイン認証はない。**Codespacesのprivate転送機構と本人のGitHubログインが必須。**
+- v0.2ではnoVNC独立認証がなかった。今回の候補ブランチは**一時VNCパスワードを追加**したが、GitHub CodespacesのPrivate転送と本人GitHubログインは引き続き必須（新方式の実機確認は未実施）。
 - 長時間の常時稼働、他人へのポート共有、本番金融口座等への利用はしない。
 - セッション情報やパスワードをChatGPT、GitHubリポジトリ、APIのGOAL欄には貼らない。
 - 手動ログインのあとVNCを停止する。
@@ -31,7 +31,7 @@ bash start_auth_desktop.sh
 ```
 
 CodespacesのPORTSで **6080 / Private** を確認。Privateでなければ中止。
-iPhone Safariで転送URLの `/vnc.html` を開き、Connect。遠隔のLinux画面が現れる。
+iPhone Safariで転送URLの `/vnc.html` を開き、Connect。一時VNCパスワードをCodespacesの起動ターミナルから入力すると遠隔Linux画面が現れる（新方式は未実機検証）。
 
 ## 3. まず実アカウント不要の模擬サイトで試す
 
