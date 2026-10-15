@@ -83,7 +83,7 @@ for i in {1..30}; do
 done
 
 echo "Starting PRIVATE remote Chromium desktop"
-bash start_auth_desktop.sh >/tmp/minifish-auth-desktop.log 2>&1 &
+MINIFISH_VNC_PASSWORD_PRINT=0 bash start_auth_desktop.sh >/tmp/minifish-auth-desktop.log 2>&1 &
 desktop_pid=$!
 for i in {1..30}; do
   if curl --silent --fail http://127.0.0.1:6080/vnc.html >/dev/null; then break; fi
@@ -102,7 +102,12 @@ echo "  🐟 MiniFish iPhone login demo READY"
 echo "==============================================="
 echo "In Codespaces PORTS: choose 6080 -> Port Visibility PRIVATE."
 echo "Open the forwarded HTTPS URL with /vnc.html in iPhone Safari."
-echo "Tap Connect, then tap Sign in (no password) in Chromium."
+echo "Tap Connect and enter the one-time VNC password shown below."
+if [[ ! -f .minifish/runtime/vnc-password.txt ]]; then
+  echo "BLOCKED: private VNC password was not created."; exit 2
+fi
+printf "Temporary noVNC password: %s\n" "$(cat .minifish/runtime/vnc-password.txt)"
+echo "Then tap Sign in (no password) in the mock Chromium page."
 echo "No real login or passwords in this experiment."
 echo "This command automatically checks save -> browser restart -> restore."
 echo ""

@@ -7,7 +7,7 @@
 ## 0. 原則
 - GitHub Codespacesの **6080番ポートは必ずPRIVATE**。公開すると、ログイン画面や操作中の内容を第三者に見られる危険がある。
 - noVNCのVNC内部ポート5901は127.0.0.1のみ。6080番はGitHubのprivate HTTPS転送がアクセス制御を担当する。
-- 今回の簡易noVNCには独立したログイン認証はない。**Codespacesのprivate転送機構と本人のGitHubログインが必須。**
+- v0.2ではnoVNC独立認証がなかった。今回の候補ブランチは**一時VNCパスワードを追加**したが、GitHub CodespacesのPrivate転送と本人GitHubログインは引き続き必須（新方式の実機確認は未実施）。
 - 長時間の常時稼働、他人へのポート共有、本番金融口座等への利用はしない。
 - セッション情報やパスワードをChatGPT、GitHubリポジトリ、APIのGOAL欄には貼らない。
 - 手動ログインのあとVNCを停止する。
@@ -31,7 +31,7 @@ bash start_auth_desktop.sh
 ```
 
 CodespacesのPORTSで **6080 / Private** を確認。Privateでなければ中止。
-iPhone Safariで転送URLの `/vnc.html` を開き、Connect。遠隔のLinux画面が現れる。
+iPhone Safariで転送URLの `/vnc.html` を開き、Connect。一時VNCパスワードをCodespacesの起動ターミナルから入力すると遠隔Linux画面が現れる（新方式は未実機検証）。
 
 ## 3. まず実アカウント不要の模擬サイトで試す
 
@@ -85,3 +85,17 @@ Terminal Aの `Ctrl-C` で **6080の遠隔ログイン画面を必ず停止**す
 - ⏳ Codespaces実環境からiPhone Safariでログイン、復元を実行する実機検品
 - ⏳ 実サイト規約・ログイン成功判定・長期保存の確認
 - ⛔ 24時間無人稼働、認証付きWebサーバの公開、本番の大量自動回答
+
+
+## 🔒 2026-10-15｜note本人ログインに進む前の保護（候補ブランチ）
+
+- 遠隔デスクトップ `start_auth_desktop.sh` はCodespaces以外を原則BLOCK。例外は明示的なローカルテスト用フラグのみ。
+- noVNCに独立した**一時VNCパスワード**を設定。接続画面のConnect後に求められる。Codespacesターミナルの表示から入力し、チャット・スクリーンショット・Issueには載せない。
+- VNCの一時パスワードと認証ファイルは `.minifish/runtime/` に所有者限定で置き、デスクトップ終了時に消す。これはサイトのログインCookieを保存する `.minifish/sites/<site_id>/storage.json` とは別物。
+- **6080番ポートのPrivate設定は依然として必須**。パスワードを追加したからPublicにしていいわけではない。
+- `iphone_login_demo.sh` は一時パスワードをターミナルに表示する。模擬会員サイト自体の `Sign in (no password)` ボタンにはパスワード不要。
+- 実noteでは、認証後に本人だけに見える要素を実ブラウザで確認して `.minifish/auth_sites.json` に設定する。**推測したセレクタで認証成功を宣言しない**。
+- 保存→別Chromiumで復元→判定を通すまでは `AUTH_REQUIRED` 扱い。下書き保存は別の承認された試験で行う。
+- Codespace削除時に保存状態が消える可能性があり、長期保存はまだ保証できない。AIによる認証済みページの取得経路も別監査。
+
+**現在地**: VNCパスワードのコードと静的テスト追加。実Codespacesでの画面接続・実noteログイン・復元はいずれも未実施。 
