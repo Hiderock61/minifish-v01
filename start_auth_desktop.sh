@@ -11,6 +11,11 @@ export DISPLAY="${MINIFISH_AUTH_DISPLAY:-:99}"
 RFB_PORT=5901
 WEB_PORT=6080
 
+if [[ "${CODESPACES:-}" != "true" && -z "${CODESPACE_NAME:-}" && "${MINIFISH_LOCAL_TEST:-}" != "1" ]]; then
+  echo "BLOCKED: remote login desktop requires GitHub Codespaces."
+  exit 2
+fi
+
 for cmd in Xvfb x11vnc websockify; do
   if ! command -v "$cmd" >/dev/null 2>&1; then
     echo "Missing $cmd. Install once in the Codespace:"
@@ -20,10 +25,6 @@ for cmd in Xvfb x11vnc websockify; do
 done
 if [[ ! -f /usr/share/novnc/vnc.html ]]; then
   echo "NoVNC files missing. Install the 'novnc' package."; exit 2
-fi
-if [[ "${CODESPACES:-}" != "true" && -z "${CODESPACE_NAME:-}" && "${MINIFISH_LOCAL_TEST:-}" != "1" ]]; then
-  echo "BLOCKED: remote login desktop requires GitHub Codespaces."
-  exit 2
 fi
 
 cleanup() {
