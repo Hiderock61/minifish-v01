@@ -1,0 +1,116 @@
+name: MiniFish Chat-to-ReadOnly Bridge v0.1
+
+on:
+  pull_request:
+    types: [opened, synchronize]
+  issues:
+    types: [opened]
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: minifish-readonly-${{ github.event.issue.number || github.run_id }}
+  cancel-in-progress: false
+
+jobs:
+  contract:
+    if: >-
+      github.event_name == 'pull_request' &&
+      github.head_ref == 'codex/chat-readonly-bridge-20261015' &&
+      github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install existing MiniFish dependencies
+        run: python -m pip install -r requirements.txt
+      - name: Offline read-only safety contract tests
+        run: PYTHONPATH=. python -m pytest -q tests/test_readonly_issue_bridge.py
+
+  read-public:
+    if: >-
+      github.event_name == 'issues' &&
+      github.event.action == 'opened' &&
+      github.event.issue.user.login == 'Hiderock61' &&
+      github.actor == 'Hiderock61' &&
+      startsWith(github.event.issue.title, '[MINIFISH READ]')
+    runs-on: ubuntu-latest
+    timeout-minutes: 7
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install existing MiniFish browser runtime
+        run: |
+          python -m pip install -r requirements.txt
+          python -m playwright install --with-deps chromium
+      - name: Run one READ ONLY mission from the GitHub Issue
+        run: |
+          PYTHONPATH=. python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+          from bridge_worker import run_job
+
+          event = json.loads(Path(os.environ["GITHUB_EVENT_PATH"]).read_text(encoding="utf-8"))
+          issue = event["issue"]
+          payload = {"number": issue["number"], "body": issue.get("body") or ""}
+          try:
+              result = run_job(payload)
+          except Exception as error:
+              # No exception text or browser secrets into public output.
+              result = {"status": "FAIL", "reason": "ISSUE_OR_RUNNER_ERROR",
+                        "error_class": type(error).__name__,
+                        "api_calls": 0, "external_writes": 0, "paid_calls": 0}
+          Path("readonly_report.json").write_text(
+              json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8"
+          )
+          if result.get("status") != "PASS":
+              raise SystemExit(1)
+          PY
+      - name: Save only the sanitized public page report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: minifish-readonly-${{ github.run_id }}
+          path: readonly_report.json
+          retention-days: 7
+          if-no-files-found: warn
+      - name: Return result to the originating Issue
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          p = Path("readonly_report.json")
+          d = json.loads(p.read_text(encoding="utf-8")) if p.exists() else {}
+          ok = d.get("status") == "PASS"
+          lines = [
+              "MINIFISH_READ_RESULT status=" + ("PASS" if ok else "FAIL"),
+              "run_id: " + str(d.get("run_id") or "NONE"),
+              "source: bridge_worker -> command_tower -> SupervisorGate -> Playwright",
+              "site: https://example.com/ (fixed allowlist)",
+              "observed_url: " + str(d.get("observed_url") or "NONE"),
+              "observed_title: " + str(d.get("title") or "NONE"),
+              "public_excerpt: " + str(d.get("public_excerpt") or "NONE"),
+              "supervisor_pass: " + str(d.get("supervisor_pass") or False),
+              "browser_actions_executed: " + str(d.get("browser_actions_executed", 0)),
+              "api_calls: 0, paid_calls: 0, external_writes: 0",
+              "error_code: " + str(d.get("reason") or "UNKNOWN"),
+              "Not tested: arbitrary URLs, authentication, ChatGPT model/API calls.",
+          ]
+          Path("readonly_issue_report.md").write_text("\n".join(lines), encoding="utf-8")
+          PY
+          printf '\n[Actions evidence](https://github.com/%s/actions/runs/%s)\n' "$GITHUB_REPOSITORY" "$GITHUB_RUN_ID" >> readonly_issue_report.md
+          gh api "repos/$GITHUB_REPOSITORY/issues/$ISSUE_NUMBER/comments" -f body="$(cat readonly_issue_report.md)"
