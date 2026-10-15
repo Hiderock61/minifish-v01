@@ -46,3 +46,12 @@ ChatGPT側のGitHubコネクタは次のIssueを1件だけ新規作成する。
 ## 原案
 Notion正本：[司令塔ブラウザ誕生](https://app.notion.com/p/3f3c10ec598c8100b6b2f51010119bbc)
 作り方：[それってどう作るの法](https://app.notion.com/p/3d9c10ec598c815cab79cdff52e9526f)
+
+## iPhone操縦席からのPUBLIC READ
+1. GitHub CodespacesでMiniFishを起動する。使い捨てのGitHub Actionsと違い、こちらは起動しているCodespace内で実行する。
+2. [IPHONE_CODESPACES.md](../IPHONE_CODESPACES.md) の通り `bash start_iphone.sh` を実行。転送ポート **8000は必ずPrivate** のまま開く。
+3. SafariのMiniFish画面でMODE＝**PUBLIC READ**。3サイトから選択し、START URLが自動入力される。
+4. **MiniFishを動かす** → RUN STATUS、RUN ID、タイトル／本文冒頭の実観測結果を確認。STOPはブラウザ読み取り前後のチェック地点で有効であり、HTTP接続中の即時強制停止を保証しない。
+5. Codespacesを削除すると内部RUN履歴が消えることがある。恒久実行記録にはGitHub Issue→Actions→結果返却経路を使う。
+
+**注意**：iPhoneの画面テストはコード/契約テストまで。Safari実機で本人操作確認したという主張はしない。製品の全操作経路に実機PASSが必要なら別に実機試験を追加する。
