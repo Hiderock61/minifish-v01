@@ -52,6 +52,14 @@ def run_job(issue: dict) -> dict:
     goal = str(payload.get("goal") or "").strip()
     url = str(payload.get("url") or "").strip()
 
+    if mode == "encrypted_article":
+        # Public GitHub Issue is transport only. It MUST NEVER contain raw text.
+        if (not str(issue.get("title") or "").startswith("[MINIFISH JOB]")
+                or (issue.get("author") or {}).get("login") != OWNER):
+            raise ValueError("UNAUTHORIZED_ENCRYPTED_HANDOFF")
+        from minifish.chat_handoff import receive_article
+        return receive_article(payload.get("envelope"))
+
     if not goal:
         raise ValueError("goal is required")
 
