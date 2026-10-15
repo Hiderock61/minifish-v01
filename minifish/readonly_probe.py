@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from pathlib import Path
 from urllib.parse import urlsplit
-from typing import Any
+from typing import Any, Callable
 
 from .command_tower import MiniFishCommandTower
 from .public_sites import site_for_url, observed_url_allowed
@@ -17,7 +17,8 @@ from .runner import MiniFishRunner
 
 
 def run_public_readonly(*, job_id: str, goal: str, url: str,
-                        run_dir: Path) -> dict[str, Any]:
+                        run_dir: Path, run_id: str | None = None,
+                        should_stop: Callable[[], bool] | None = None) -> dict[str, Any]:
     site = site_for_url(url)
     decision = MiniFishCommandTower.preflight_public_readonly(job_id, goal, url)
     baseline: dict[str, Any] = {
@@ -43,9 +44,10 @@ def run_public_readonly(*, job_id: str, goal: str, url: str,
         headless=True,
         profile_path=None,
         capture_dir=None,
+        should_stop=should_stop,
         log_path=str(run_dir / "private_run.json"),
     )
-    state = runner.run(goal=goal, start_url=site.url)
+    state = runner.run(goal=goal, start_url=site.url, run_id=run_id)
     observed = state.events[0].observation if state.events else {}
     title = str(observed.get("title") or "").strip()
     body = str(observed.get("text_excerpt") or "").strip()
