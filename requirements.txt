@@ -3,3 +3,4 @@ openai
 pytest
 fastapi
 uvicorn[standard]
+cryptography>=42,<48
