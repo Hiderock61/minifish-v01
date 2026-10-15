@@ -26,6 +26,14 @@ if [[ "${CODESPACES:-}" != "true" && -z "${CODESPACE_NAME:-}" && "${MINIFISH_LOC
   exit 2
 fi
 
+cleanup() {
+  rm -f -- "$PASSWORD_FILE" "$AUTH_FILE"
+  [[ -n "${proxy_pid:-}" ]] && kill "$proxy_pid" 2>/dev/null || true
+  [[ -n "${vnc_pid:-}" ]] && kill "$vnc_pid" 2>/dev/null || true
+  [[ -n "${xvfb_pid:-}" ]] && kill "$xvfb_pid" 2>/dev/null || true
+}
+trap cleanup EXIT INT TERM
+
 # Defense in depth: GitHub's port 6080 MUST ALSO be Private.
 # VNC password only protects the screen, not the port or the browser cookies.
 mkdir -p "$SECRET_DIR"
@@ -44,14 +52,7 @@ unset PASSWORD
 
 
 # The VNC server binds to 127.0.0.1; the GitHub private-forwarded HTTPS
-# endpoint (6080) is the ONLY remote access gate. Never set it Public.
-cleanup() {
-  rm -f -- "$PASSWORD_FILE" "$AUTH_FILE"
-  [[ -n "${proxy_pid:-}" ]] && kill "$proxy_pid" 2>/dev/null || true
-  [[ -n "${vnc_pid:-}" ]] && kill "$vnc_pid" 2>/dev/null || true
-  [[ -n "${xvfb_pid:-}" ]] && kill "$xvfb_pid" 2>/dev/null || true
-}
-trap cleanup EXIT INT TERM
+# endpoint (6080) must remain Private. VNC authentication is a second gate.
 Xvfb "$DISPLAY" -screen 0 1280x800x24 -nolisten tcp >/tmp/minifish-xvfb.log 2>&1 &
 xvfb_pid=$!
 sleep 1
