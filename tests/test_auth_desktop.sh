@@ -35,7 +35,7 @@ with connect("ws://127.0.0.1:6080/websockify", subprotocols=["binary"], open_tim
     if isinstance(banner, str):
         banner = banner.encode()
     assert banner.startswith(b"RFB "), repr(banner)
-    conn.send(b"RFB 003.008\\n")
+    conn.send(b"RFB 003.008\n")
     security = bytearray()
     for _ in range(10):
         fragment = conn.recv(timeout=5)
