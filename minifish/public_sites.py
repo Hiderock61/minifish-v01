@@ -53,7 +53,7 @@ def observed_url_allowed(site: PublicSite, observed_url: str) -> bool:
             and not p.query
             and not p.fragment
             and (p.path == site.path_prefix.rstrip("/")
-                 or p.path.startswith(site.path_prefix))
+                 or p.path.startswith(site.path_prefix.rstrip("/") + "/"))
         )
     except ValueError:
         return False
