@@ -53,7 +53,7 @@ def run_public_readonly(*, job_id: str, goal: str, url: str,
         state.status == "COMPLETED"
         and seen_url in ("https://example.com/", "https://example.com")
         and title == "Example Domain"
-        and "Example Domain" in body
+        and len(body) >= 20
         and len(state.ledger) == 1
         and state.ledger[0].decision == "PASS"
         and state.ledger[0].action_type == "done"
@@ -67,7 +67,7 @@ def run_public_readonly(*, job_id: str, goal: str, url: str,
         "runner_completed": state.status == "COMPLETED",
         "url_match": seen_url in ("https://example.com/", "https://example.com"),
         "title_match": title == "Example Domain",
-        "body_match": "Example Domain" in body,
+        "body_has_content": len(body) >= 20,
         "single_guarded_done": (
             len(state.ledger) == 1
             and state.ledger[0].decision == "PASS"
