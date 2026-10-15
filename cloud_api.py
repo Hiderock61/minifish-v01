@@ -117,7 +117,14 @@ CONTROL_HTML = r"""
     <select id="mode">
       <option value="demo">DEMO｜安全な内蔵ページ</option>
       <option value="poikatsu_demo">POIKATSU DEMO｜模擬アンケート</option>
+      <option value="public_read">PUBLIC READ｜登録済みサイト（API課金なし）</option>
       <option value="agent">AGENT｜実Web</option>
+    </select>
+    <label for="sitePicker">公開サイト（PUBLIC READ）</label>
+    <select id="sitePicker">
+      <option value="https://example.com/">Example Domain｜動作試験</option>
+      <option value="https://docs.python.org/3/">Python公式ドキュメント</option>
+      <option value="https://github.com/Hiderock61/minifish-v01">MiniFish GitHub</option>
     </select>
     <label for="url">START URL</label>
     <input id="url" type="url" inputmode="url" placeholder="https://example.com">
@@ -152,6 +159,10 @@ const runButton = document.getElementById('runButton');
 const stopButton = document.getElementById('stopButton');
 const modeInput = document.getElementById('mode');
 const urlInput = document.getElementById('url');
+const sitePicker = document.getElementById('sitePicker');
+sitePicker.addEventListener('change', () => {
+  if (modeInput.value === 'public_read') urlInput.value = sitePicker.value;
+});
 let timer = null;
 let currentRunId = null;
 
@@ -219,7 +230,7 @@ runButton.addEventListener('click', async () => {
   document.getElementById('result').textContent = '';
   const mode = modeInput.value;
   const goal = document.getElementById('goal').value.trim();
-  const url = urlInput.value.trim();
+  const url = mode === 'public_read' ? sitePicker.value : urlInput.value.trim();
   if (!goal) {
     document.getElementById('notice').textContent = 'GOALが必要です。';
     return;
@@ -254,6 +265,13 @@ stopButton.addEventListener('click', async () => {
 });
 
 modeInput.addEventListener('change', async () => {
+  if (modeInput.value === 'public_read') {
+    urlInput.value = sitePicker.value;
+    document.getElementById('goal').value = '登録済み公開ページのタイトルと本文を確認する';
+    document.getElementById('notice').textContent =
+      '無人公開ページを1回読むだけ。投稿・ログイン・API課金はしません。';
+    return;
+  }
   if (modeInput.value !== 'agent') {
     document.getElementById('notice').textContent = '';
     return;
@@ -273,7 +291,7 @@ modeInput.addEventListener('change', async () => {
 class RunRequest(BaseModel):
     goal: str
     url: str | None = None
-    mode: Literal["demo", "poikatsu_demo", "agent"] = "demo"
+    mode: Literal["demo", "poikatsu_demo", "public_read", "agent"] = "demo"
     human_facts: list[str] = Field(default_factory=list)
 
 
@@ -309,6 +327,36 @@ def is_cancelled(run_id: str) -> bool:
 
 def run_worker(run_id: str, request: RunRequest) -> None:
     run_dir = RUN_ROOT / run_id
+    if request.mode == "public_read":
+        from minifish.readonly_probe import run_public_readonly
+        if is_cancelled(run_id):
+            return
+        result = run_public_readonly(
+            job_id=run_id, goal=request.goal, url=request.url or "",
+            run_dir=run_dir, run_id=run_id,
+            should_stop=lambda: is_cancelled(run_id),
+        )
+        cancelled = is_cancelled(run_id)
+        safe_status = (
+            "CANCELLED" if cancelled else
+            "COMPLETED" if result["status"] == "PASS" else
+            "WAITING" if result["status"] == "BLOCKED" else "FAILED"
+        )
+        save_snapshot(run_id, {
+            "run_id": run_id, "status": safe_status,
+            "step_count": result.get("steps", 0), "goal": request.goal,
+            "mode": "public_read", "start_url": request.url,
+            "current_url": result.get("observed_url") or request.url,
+            "last_action": {"type": "done"} if safe_status == "COMPLETED" else None,
+            "result": " | ".join(filter(None, [
+                str(result.get("status")), str(result.get("title") or ""),
+                str(result.get("public_excerpt") or ""), str(result.get("reason") or "")
+            ])),
+            "error": None if safe_status == "COMPLETED" else str(result.get("reason")),
+            "events": [], "ledger": [result.get("evidence_checks", {})],
+            "human_facts": list(request.human_facts),
+        })
+        return
     if request.mode == "demo":
         planner = ScriptedPlanner([
             Action(type="click", role="button", name="プロフィール", reason="goal requires profile editor"),
@@ -379,6 +427,13 @@ async def create_run(request: RunRequest, background_tasks: BackgroundTasks) -> 
     goal = request.goal.strip()
     if not goal:
         raise HTTPException(status_code=400, detail="GOAL is required")
+    if request.mode == "public_read":
+        from minifish.command_tower import MiniFishCommandTower
+        dec = MiniFishCommandTower.preflight_public_readonly(
+            "browser_ui", goal, request.url or ""
+        )
+        if dec.state != "PASS":
+            raise HTTPException(status_code=400, detail=dec.reason)
     if request.mode == "agent":
         if not request.url or not request.url.startswith(("http://", "https://")):
             raise HTTPException(status_code=400, detail="AGENT mode requires an http(s) START URL")
