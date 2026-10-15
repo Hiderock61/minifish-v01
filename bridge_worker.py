@@ -58,6 +58,14 @@ def run_job(issue: dict) -> dict:
     issue_no = int(issue["number"])
     run_dir = RUN_ROOT / f"issue_{issue_no}"
 
+    if mode == "read_only":
+        # One-shot GitHub Actions route. No OpenAIPlanner, login, cookies or clicks.
+        from minifish.readonly_probe import run_public_readonly
+        return run_public_readonly(
+            job_id=f"issue_{issue_no}", goal=goal, url=url,
+            run_dir=run_dir,
+        )
+
     if mode == "demo":
         planner = ScriptedPlanner([
             Action(type="click", role="button", name="プロフィール"),

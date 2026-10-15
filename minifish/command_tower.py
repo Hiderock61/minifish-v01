@@ -56,6 +56,21 @@ class MiniFishCommandTower:
             return TowerDecision("HUMAN", "EXTERNAL_ROUTE_NOT_AUTHORIZED")
         return TowerDecision("PASS", "SAFE_LOCAL_MOCK")
 
+    @staticmethod
+    def preflight_public_readonly(job_id: str, goal: str, url: str) -> TowerDecision:
+        """A deliberately narrow, credential-free real-web gate for issue commands.
+
+        No user-provided URL is permitted beyond the one static public fixture.
+        The goal is recorded as data; it never becomes an AI instruction.
+        """
+        if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_-]{0,63}", job_id):
+            return TowerDecision("STOP", "INVALID_JOB_ID")
+        if not isinstance(goal, str) or not 1 <= len(goal.strip()) <= 200:
+            return TowerDecision("STOP", "INVALID_READ_ONLY_GOAL")
+        if url not in ("https://example.com", "https://example.com/"):
+            return TowerDecision("STOP", "URL_NOT_ALLOWLISTED")
+        return TowerDecision("PASS", "PUBLIC_READ_ONLY_FIXED_URL")
+
     def execute(self, mission: Mission) -> dict[str, Any]:
         # Check duplicate BEFORE side effects. A future remote worker needs
         # a persistent cross-process/idempotency lock; this is local only.
