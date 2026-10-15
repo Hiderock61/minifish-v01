@@ -75,7 +75,7 @@ def test_public_evidence_requires_real_observation_and_supervisor(monkeypatch, t
                 status="COMPLETED", step_count=1,
                 events=[SimpleNamespace(observation={
                     "url": "https://example.com/", "title": "Example Domain",
-                    "text_excerpt": "Example Domain test page",
+                    "text_excerpt": "This domain is for use in documentation examples.",
                 })],
                 ledger=[SimpleNamespace(decision="PASS", action_type="done")],
             )
