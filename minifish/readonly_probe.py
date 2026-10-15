@@ -7,6 +7,7 @@ credentials, login state, API calls, clicks, fills, submissions or retries.
 from __future__ import annotations
 
 from pathlib import Path
+from urllib.parse import urlsplit
 from typing import Any
 
 from .command_tower import MiniFishCommandTower
@@ -57,9 +58,29 @@ def run_public_readonly(*, job_id: str, goal: str, url: str,
         and state.ledger[0].decision == "PASS"
         and state.ledger[0].action_type == "done"
     )
+    parsed = urlsplit(seen_url)
+    diagnostic_origin = (
+        f"{parsed.scheme}://{parsed.hostname}"
+        if parsed.scheme in ("http", "https") and parsed.hostname else ""
+    )
+    checks = {
+        "runner_completed": state.status == "COMPLETED",
+        "url_match": seen_url in ("https://example.com/", "https://example.com"),
+        "title_match": title == "Example Domain",
+        "body_match": "Example Domain" in body,
+        "single_guarded_done": (
+            len(state.ledger) == 1
+            and state.ledger[0].decision == "PASS"
+            and state.ledger[0].action_type == "done"
+        ),
+    }
     return {
         **baseline,
         "status": "PASS" if evidence_ok else "FAIL",
+        "diagnostic_origin": diagnostic_origin,
+        "diagnostic_title": title[:100] if diagnostic_origin == "https://example.com" else "",
+        "diagnostic_body_length": len(body) if diagnostic_origin == "https://example.com" else 0,
+        "evidence_checks": checks,
         "reason": "PUBLIC_PAGE_OBSERVED" if evidence_ok else "PUBLIC_EVIDENCE_NOT_VERIFIED",
         "run_id": state.run_id,
         "runner_status": state.status,
