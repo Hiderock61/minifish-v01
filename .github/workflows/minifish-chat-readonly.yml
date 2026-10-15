@@ -108,6 +108,10 @@ jobs:
               "browser_actions_executed: " + str(d.get("browser_actions_executed", 0)),
               "api_calls: 0, paid_calls: 0, external_writes: 0",
               "error_code: " + str(d.get("reason") or "UNKNOWN"),
+              "diagnostic_origin: " + str(d.get("diagnostic_origin") or "NONE"),
+              "diagnostic_title: " + str(d.get("diagnostic_title") or "NONE"),
+              "diagnostic_body_length: " + str(d.get("diagnostic_body_length", 0)),
+              "evidence_checks: " + str(d.get("evidence_checks") or {}),
               "Not tested: arbitrary URLs, authentication, ChatGPT model/API calls.",
           ]
           Path("readonly_issue_report.md").write_text("\n".join(lines), encoding="utf-8")
