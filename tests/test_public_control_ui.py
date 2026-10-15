@@ -1,5 +1,5 @@
 """iPhone control-seat public READ regression without network or billable API."""
-from pathlib import Path
+import asyncio
 
 import pytest
 from fastapi import BackgroundTasks, HTTPException
@@ -16,19 +16,17 @@ def test_iphone_control_contains_safe_read_picker():
     assert 'mode === \'public_read\'' in html
 
 
-@pytest.mark.asyncio
-async def test_cloud_api_rejects_unregistered_url_without_launching():
+def test_cloud_api_rejects_unregistered_url_without_launching():
     request = cloud_api.RunRequest(
         mode="public_read", goal="公開観測", url="http://127.0.0.1:8000/admin"
     )
     with pytest.raises(HTTPException) as exc:
-        await cloud_api.create_run(request, BackgroundTasks())
+        asyncio.run(cloud_api.create_run(request, BackgroundTasks()))
     assert exc.value.status_code == 400
     assert exc.value.detail == "URL_NOT_ALLOWLISTED"
 
 
-@pytest.mark.asyncio
-async def test_cloud_api_accepts_public_read_and_reports_evidence(monkeypatch, tmp_path):
+def test_cloud_api_accepts_public_read_and_reports_evidence(monkeypatch, tmp_path):
     monkeypatch.setattr(cloud_api, "RUN_ROOT", tmp_path)
     seen = {}
     def fake_run(**kwargs):
@@ -44,10 +42,10 @@ async def test_cloud_api_accepts_public_read_and_reports_evidence(monkeypatch, t
     request = cloud_api.RunRequest(
         mode="public_read", goal="公開サンプル確認", url="https://example.com/"
     )
-    initial = await cloud_api.create_run(request, BackgroundTasks())
+    initial = asyncio.run(cloud_api.create_run(request, BackgroundTasks()))
     assert initial["status"] == "PENDING"
     cloud_api.run_worker(initial["run_id"], request)
-    result = await cloud_api.get_run(initial["run_id"])
+    result = asyncio.run(cloud_api.get_run(initial["run_id"]))
     assert result["status"] == "COMPLETED"
     assert result["mode"] == "public_read"
     assert result["current_url"] == "https://example.com/"
