@@ -23,7 +23,7 @@ PUBLIC_SITES: dict[str, PublicSite] = {
         "example", "https://example.com/", "example.com", "/", "Example Domain"
     ),
     "python": PublicSite(
-        "python", "https://docs.python.org/3/", "docs.python.org", "/3/", "Python"
+        "python", "https://docs.python.org/3/", "docs.python.org", "/3/", "Documentation"
     ),
     "github": PublicSite(
         "github", "https://github.com/Hiderock61/minifish-v01",

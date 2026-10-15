@@ -92,3 +92,31 @@ def test_never_skip_control_gate_for_unapproved_site():
         "issue_99", "Read", "https://docs.python.org/3/#fragment"
     )
     assert d.state == "STOP"
+
+
+def test_versioned_python_documentation_title_is_valid_without_word_python(monkeypatch, tmp_path):
+    from types import SimpleNamespace
+    from minifish import readonly_probe
+    class FakeRunner:
+        def __init__(self, planner, **kwargs):
+            assert kwargs["profile_path"] is None
+            assert kwargs["capture_dir"] is None
+        def run(self, **kwargs):
+            assert kwargs["start_url"] == "https://docs.python.org/3/"
+            return SimpleNamespace(
+                run_id="python_doc_mock",
+                status="COMPLETED", step_count=1,
+                events=[SimpleNamespace(observation={
+                    "url": "https://docs.python.org/3/",
+                    "title": "3.15.0 Documentation",
+                    "text_excerpt": "This documentation explains the Python programming language."
+                })],
+                ledger=[SimpleNamespace(decision="PASS", action_type="done")],
+            )
+    monkeypatch.setattr(readonly_probe, "MiniFishRunner", FakeRunner)
+    report = readonly_probe.run_public_readonly(
+        job_id="issue_24", goal="Python docs", url="https://docs.python.org/3/",
+        run_dir=tmp_path,
+    )
+    assert report["status"] == "PASS"
+    assert report["evidence_checks"]["title_match"] is True
