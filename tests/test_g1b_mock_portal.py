@@ -73,7 +73,8 @@ def test_private_codespaces_html_contract():
 def test_private_mock_controller_save_relaunch_and_revoke(tmp_path):
     home = tmp_path / "home"
     home.mkdir(mode=0o700)
-    env = dict(os.environ, HOME=str(home), PYTHONPATH=str(Path.cwd()))
+    env = dict(os.environ, HOME=str(home), PYTHONPATH=str(Path.cwd()),
+               PLAYWRIGHT_BROWSERS_PATH=str(Path.home() / ".cache/ms-playwright"))
     server = subprocess.Popen(
         [sys.executable, "-m", "uvicorn", "g1b_mock_app:app",
          "--host", "127.0.0.1", "--port", "8002", "--no-access-log", "--log-level", "warning"],
