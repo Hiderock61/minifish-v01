@@ -46,8 +46,9 @@ GitHub Codespaces の 8002 / 6080 ポートは必ず Private にしてくださ�
 <div id="result">状態を確認しています…</div>
 <button id="start">① 架空ログイン画面を起動</button>
 <a class="gui" id="desktop" href="#" target="_blank" rel="noopener">② ブラウザの画面を開く（6080）</a>
-<button id="save">③ 架空ログイン後、暗号化して保存</button>
-<button id="verify">④ ブラウザ再起動で復元を確認</button>
+<button id="mockClick">③ 架空のログインボタンを押す（模擬操作）</button>
+<button id="save">④ 暗号化して保存</button>
+<button id="verify">⑤ ブラウザ再起動で復元を確認</button>
 <p>外部サイトや本物のID・パスワードは入力しないでください。
 保存したものはCodespaces内部の架空セッションだけです。</p>
 <script>
@@ -64,6 +65,7 @@ const d=await r.json();
 document.getElementById("result").textContent="STATE: "+d.status+" / "+d.note;
 document.getElementById("start").disabled=d.busy;
 document.getElementById("save").disabled=!d.busy;
+document.getElementById("mockClick").disabled=!d.busy;
 document.getElementById("verify").disabled=d.busy;
 }
 async function action(name){
@@ -72,6 +74,7 @@ method:"POST",credentials:"same-origin",headers:{"X-MiniFish-Mock-Action":"G1B"}
 if(!r.ok)document.getElementById("result").textContent="BLOCKED: "+r.status;
 await status();
 }
+document.getElementById("mockClick").onclick=()=>action("mock-click");
 for(const name of ["start","save","verify"])
 document.getElementById(name).onclick=()=>action(name);
 status();setInterval(status,1600);
@@ -127,6 +130,7 @@ class MockManager:
     def __init__(self) -> None:
         self._lock = Lock()
         self._finish = Event()
+        self._mock_click = Event()
         self._worker: Thread | None = None
         self._status = "IDLE"
         self._note = "NO_REAL_ACCOUNT"
@@ -141,10 +145,17 @@ class MockManager:
             if self._worker is not None and self._worker.is_alive():
                 raise ValueError("G1B_ALREADY_RUNNING")
             self._finish = Event()
+            self._mock_click = Event()
             self._status = "OPENING"
             self._note = "MOCK_ONLY"
             self._worker = Thread(target=self._run, args=(verify, self._finish), daemon=True)
             self._worker.start()
+
+    def mock_click(self) -> None:
+        with self._lock:
+            if self._worker is None or not self._worker.is_alive() or self._status != "WAITING_USER":
+                raise ValueError("G1B_NOT_READY")
+            self._mock_click.set()
 
     def finish(self) -> None:
         with self._lock:
@@ -173,9 +184,13 @@ class MockManager:
                               "MOCK_SESSION_RESTORED" if valid else "MOCK_LOGIN_REQUIRED")
                     return
                 self._set("WAITING_USER", "OPEN_NO_VNC_AND_CLICK_MOCK_LOGIN")
-                if not finish.wait(MAX_SECONDS):
-                    # Raise to avoid writing an unattended or half-finished profile.
-                    raise TimeoutError("G1B_MOCK_LOGIN_TIMED_OUT")
+                deadline = time.monotonic() + MAX_SECONDS
+                while not finish.wait(0.15):
+                    if self._mock_click.is_set():
+                        self._mock_click.clear()
+                        browser.page.get_by_role("button", name="Mock login").click()
+                    if time.monotonic() >= deadline:
+                        raise TimeoutError("G1B_MOCK_LOGIN_TIMED_OUT")
                 browser.goto(BASE + "/mock/private")
                 if "AUTHORIZED_TEST_ONLY" not in browser.observe().text_excerpt:
                     raise ValueError("G1B_MOCK_LOGIN_NOT_VERIFIED")
@@ -197,10 +212,11 @@ manager = MockManager()
 def require_same_origin(request: Request) -> None:
     origin = request.headers.get("origin", "")
     host = request.headers.get("host", "")
+    local = host in ("127.0.0.1:8002", "localhost:8002")
+    codespace = bool(re.fullmatch(r"[a-z0-9-]+-8002\.app\.github\.dev", host))
+    expected = ("http://" if local else "https://") + host
     if (request.headers.get("x-minifish-mock-action") != "G1B"
-            or not origin or not host or origin != str(request.base_url).rstrip("/")
-            or not (host.startswith("127.0.0.1:") or host.startswith("localhost:")
-                    or re.fullmatch(r"[a-z0-9-]+-8002\.app\.github\.dev", host))):
+            or not (local or codespace) or origin != expected):
         raise HTTPException(403, "G1B_SAME_ORIGIN_REQUIRED")
 
 
@@ -264,3 +280,13 @@ def verify(request: Request):
         return manager.snapshot()
     except ValueError:
         raise HTTPException(409, "G1B_ALREADY_RUNNING") from None
+
+
+@app.post("/g1b/mock-click")
+def mock_click(request: Request):
+    require_same_origin(request)
+    try:
+        manager.mock_click()
+        return manager.snapshot()
+    except ValueError:
+        raise HTTPException(409, "G1B_NOT_READY") from None
