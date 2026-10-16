@@ -30,9 +30,7 @@ def wait_for(states, *, timeout=16):
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
         data = request("/g1b/status")
-        if data["status"] in states and not (
-            data["status"] == "OPENING"
-        ):
+        if data["status"] in states and (data["status"] in ("WAITING_USER", "MOCK_CLICKED") or not data["busy"]):
             return data
         time.sleep(0.12)
     raise AssertionError("G1B_STATUS_TIMEOUT expected=" + str(states))
@@ -107,7 +105,7 @@ def test_private_mock_controller_save_relaunch_and_revoke(tmp_path):
             request("/g1b/start", method="POST", headers=HEADERS)
         assert e.value.code == 409
         request("/g1b/mock-click", method="POST", headers=HEADERS)
-        time.sleep(.5)
+        assert wait_for({"MOCK_CLICKED", "BLOCKED"})["status"] == "MOCK_CLICKED"
         request("/g1b/save", method="POST", headers=HEADERS)
         assert wait_for({"SAVED", "BLOCKED"})["status"] == "SAVED"
 
