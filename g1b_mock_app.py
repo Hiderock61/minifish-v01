@@ -211,7 +211,13 @@ class MockManager:
                         "G1B_KEY_SYMLINK_BLOCKED", "SESSION_VAULT_DECRYPT_FAILED"):
                 self._set("BLOCKED", code)
             else:
-                self._set("BLOCKED", "G1B_PRIVATE_SETUP_FAILED_" + stage + "_" + type(exc).__name__)
+                note = "G1B_PRIVATE_SETUP_FAILED_" + stage + "_" + type(exc).__name__
+                if os.getenv("MINIFISH_G1B_DEBUG_MOCK_CI") == "1" and stage == "BROWSER":
+                    # CI fixture only. Never enabled for real sessions.
+                    tail = str(exc)[-360:].replace("\\n", " ")
+                    tail = re.sub(r"(sk-[A-Za-z0-9_-]+|gh[pousr]_[A-Za-z0-9_-]+)", "[REDACTED]", tail)
+                    note += ":" + tail
+                self._set("BLOCKED", note)
 
 
 manager = MockManager()
