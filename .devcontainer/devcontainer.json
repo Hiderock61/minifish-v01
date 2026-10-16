@@ -9,6 +9,21 @@
     6081
   ],
   "portsAttributes": {
+    "5901": {
+      "label": "Internal desktop/VNC port (not forwarded)",
+      "onAutoForward": "ignore",
+      "visibility": "private"
+    },
+    "5911": {
+      "label": "Internal desktop/VNC port (not forwarded)",
+      "onAutoForward": "ignore",
+      "visibility": "private"
+    },
+    "6080": {
+      "label": "Internal desktop/VNC port (not forwarded)",
+      "onAutoForward": "ignore",
+      "visibility": "private"
+    },
     "6081": {
       "label": "MiniFish G1b private mock desktop (random password)",
       "onAutoForward": "notify",
