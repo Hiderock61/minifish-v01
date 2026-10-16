@@ -73,7 +73,7 @@ tigervncserver :11 -geometry 1280x768 -depth 24 -rfbport 5911 \
   -desktop MiniFish-G1b >/dev/null
 
 # Do not expose 8002 until the private mock desktop successfully started.
-nohup "\${proxies[0]}" --listen 6081 --vnc localhost:5911 \
+nohup "${proxies[0]}" --listen 6081 --vnc localhost:5911 \
   >"$private_dir/novnc.log" 2>&1 &
 proxy_pid=$!
 export DISPLAY=:11
