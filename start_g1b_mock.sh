@@ -52,7 +52,7 @@ if [[ -L "$private_dir/vnc-passwd" ]]; then
 fi
 auth_temp="$(mktemp "$private_dir/.vnc-auth-XXXXXXXX")"
 chmod 600 "$auth_temp"
-printf '%s\\n' "$(cat "$private_dir/vnc-password.txt")" | vncpasswd -f > "$auth_temp"
+printf '%s\n' "$(cat "$private_dir/vnc-password.txt")" | vncpasswd -f > "$auth_temp"
 mv -f "$auth_temp" "$private_dir/vnc-passwd"
 
 shopt -s nullglob
@@ -73,10 +73,19 @@ tigervncserver :11 -geometry 1280x768 -depth 24 -rfbport 5911 \
   -desktop MiniFish-G1b >/dev/null
 
 # Do not expose 8002 until the private mock desktop successfully started.
-nohup "${proxies[0]}" --listen 6081 --vnc localhost:5911 \
+nohup "\${proxies[0]}" --listen 6081 --vnc localhost:5911 \
   >"$private_dir/novnc.log" 2>&1 &
+proxy_pid=$!
 export DISPLAY=:11
 
+cleanup() {
+  kill "$proxy_pid" >/dev/null 2>&1 || true
+  tigervncserver -kill :11 >/dev/null 2>&1 || true
+  rm -f "$private_dir/vnc-password.txt" "$private_dir/vnc-passwd"
+}
+trap cleanup EXIT
+trap 'exit 0' TERM INT
+
 echo "G1B_PRIVATE_MOCK_READY=1 PORTS=8002,6081"
-exec uvicorn g1b_mock_app:app --host 0.0.0.0 --port 8002 \
+uvicorn g1b_mock_app:app --host 0.0.0.0 --port 8002 \
   --no-access-log --log-level warning
