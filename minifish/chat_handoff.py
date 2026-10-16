@@ -213,11 +213,12 @@ def bootstrap_receiver(*, private_path: Path = PRIVATE_KEY_PATH,
             receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
             if receipt.get("fingerprint") == fingerprint:
                 return {"status": "PUBLIC_KEY_ALREADY_ANNOUNCED", "fingerprint": fingerprint}
+            return {"status": "BLOCKED_RECEIPT_MISMATCH"}
         body = (
-            "MINIFISH_HANDOFF_PUBLIC_KEY v1 (Codespace startup)\\n"
-            + "fingerprint_sha256: " + fingerprint + "\\n"
-            + "Only the PUBLIC receiving key follows. No private key, login, or draft.\\n"
-            + "```pem\\n" + public_pem.decode("ascii") + "```\\n"
+            "MINIFISH_HANDOFF_PUBLIC_KEY v1 (Codespace startup)\n"
+            + "fingerprint_sha256: " + fingerprint + "\n"
+            + "Only the PUBLIC receiving key follows. No private key, login, or draft.\n"
+            + "```pem\n" + public_pem.decode("ascii") + "```\n"
             + "Purpose: encrypt a synthetic chat article for private MiniFish inbox; no note posting."
         )
         if publish_comment is None:
