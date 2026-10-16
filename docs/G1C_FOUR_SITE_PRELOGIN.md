@@ -45,3 +45,10 @@
 - 本人プロフィールの保存は**一切行っていない**。書込み機能を実サイトへ配線するのは本人が後日ログインし、画面の構造と操作許可を確認したときだけ。
 
 **NEXT**：本人が気の向いた日に1サイトだけ選び、PRIVATEブラウザの実機動作／ログインを確認する。それまではログイン操作を要求しない。ログイン情報のコピーやTinyFishのVaultからの抽出もしない。
+
+## 2026-10-16｜本物の公開サイトで日本語以外の文字入力がPASS
+- 新装置：`minifish/live_public_input.py`。既存公開3サイトのうちPython公式ドキュメントの `https://docs.python.org/3/` をREAD、同じサイトの検索ページ `https://docs.python.org/3/search.html` の検索欄に `MiniFish browser input check` を入力、画面から入力値を読み返す。
+- **実行証拠**：[Actions RUN 38866241663](https://github.com/Hiderock61/minifish-v01/actions/runs/38866241663) は `completed/success`、`MINIFISH_REAL_PUBLIC_INPUT=PASS`、`observed_public_page=true`、`typing_verified=true`。ブラウザが入力後の値の一致を確認。
+- 安全範囲：Python公式ホスト・`/3/` 以下のGET/HEADだけ許可し、クエリ付き・外部ホスト・POSTなどの通信はブロック。検索ボタン押下、Enter入力、フォーム提出、書込み、ログイン、OpenAI API呼出はいずれもなし。
+- **到達点**：GitHub Actionsからの「実サイトREAD→表示中の入力欄へfill→入力値照合」はPROVEN。プロフィール文章の実サービス保存・ログイン後の編集、ChatGPTからのこの新しい入力モードの1発話起動は、まだ未実装／未実証。
+- 次工程は、この安全な公開Web入力モードを**ChatGPT→司令塔→GitHub Actions→結果回収**の既存経路へ接続すること。既存のREAD ONLYモードは変更せず、登録外のURLや入力値を受け付けない。
