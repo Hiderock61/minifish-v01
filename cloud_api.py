@@ -111,6 +111,12 @@ CONTROL_HTML = r"""
   <div class="eyebrow">MINIFISH CLOUD v0.2</div>
   <h1>iPhone操縦席 🐟</h1>
   <p class="sub">DemoはAIなし。AgentはURL＋GOALを受け、クラウド側のChromiumをMiniFishが操作する。</p>
+  <section class="card" aria-label="クラウドワークスのログイン">
+    <b>🔑 クラウドワークスの本人ログイン</b>
+    <p class="muted">ここからMiniFishの本人専用ブラウザを開きます。パスワードをChatGPTに貼らないでください。</p>
+    <a id="ownerLoginLink" href="#" style="display:block;padding:14px;border-radius:12px;background:#87c3ff;color:#071025;font-weight:850;text-align:center;text-decoration:none">MiniFishでログインする</a>
+    <p id="ownerLoginNotice" class="muted">PRIVATEのMiniFish専用画面が必要です。</p>
+  </section>
 
   <section class="card">
     <label for="mode">MODE</label>
@@ -155,6 +161,18 @@ CONTROL_HTML = r"""
   </section>
 </main>
 <script>
+const ownerLink = document.getElementById('ownerLoginLink');
+const ownerNote = document.getElementById('ownerLoginNotice');
+const codehost = location.hostname;
+const onCodespace = /^[a-z0-9-]+-8000\\.app\\.github\\.dev$/.test(codehost);
+if (onCodespace) {
+  ownerLink.href = "https://" + codehost.replace(/-8000\\.app\\.github\\.dev$/, "-8002.app.github.dev") + "/login-ready";
+  ownerNote.textContent = "ログイン用のPRIVATE画面に移動します。開けない場合は設定がまだ準備中です。";
+} else {
+  ownerLink.removeAttribute('href');
+  ownerLink.setAttribute('aria-disabled', 'true');
+  ownerNote.textContent = "本人専用 Codespaces でのみ利用できます。";
+}
 const runButton = document.getElementById('runButton');
 const stopButton = document.getElementById('stopButton');
 const modeInput = document.getElementById('mode');
