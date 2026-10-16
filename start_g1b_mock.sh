@@ -46,12 +46,14 @@ fi
 
 # VncAuth uses up to 8 characters; all 8 are generated with OS randomness.
 # The auth file is private; the plaintext password is NOT sent to stdout/logs.
-if [[ -e "$private_dir/vnc-passwd" || -L "$private_dir/vnc-passwd" ]]; then
-  echo "G1B_BLOCKED_VNC_ALREADY_CONFIGURED"
+if [[ -L "$private_dir/vnc-passwd" ]]; then
+  echo "G1B_BLOCKED_VNC_SYMLINK"
   exit 1
 fi
-printf '%s\n' "$(cat "$private_dir/vnc-password.txt")" | vncpasswd -f > "$private_dir/vnc-passwd"
-chmod 600 "$private_dir/vnc-passwd"
+auth_temp="$(mktemp "$private_dir/.vnc-auth-XXXXXXXX")"
+chmod 600 "$auth_temp"
+printf '%s\\n' "$(cat "$private_dir/vnc-password.txt")" | vncpasswd -f > "$auth_temp"
+mv -f "$auth_temp" "$private_dir/vnc-passwd"
 
 shopt -s nullglob
 proxies=(/usr/local/novnc/noVNC*/utils/novnc_proxy)
