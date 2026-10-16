@@ -73,13 +73,25 @@ def observe_login_only(key: str, *, timeout_ms: int = 15000) -> dict[str, Any]:
             context.route("**/*", route_request)
             response = page.goto(site.login_url, wait_until="domcontentloaded", timeout=timeout_ms)
             p = urlsplit(page.url)
-            if (p.scheme != "https" or p.hostname != site.host or
-                    (response is not None and response.status >= 400)):
-                report["status"] = "BLOCKED"
-                report["reason"] = "G1_LOGIN_SITE_REJECTED_OR_REDIRECTED"
+            if p.scheme != "https" or p.hostname != site.host:
+                report["reason"] = "G1_LOGIN_REDIRECT_OUTSIDE_APPROVED_SITE"
                 return report
-            page.wait_for_timeout(500)
-            # Text-only evidence of login inputs, not their values.
+            if response is not None and response.status >= 400:
+                code = response.status
+                report["reason"] = (
+                    "G1_LOGIN_HTTP_403" if code == 403 else
+                    "G1_LOGIN_HTTP_429" if code == 429 else
+                    "G1_LOGIN_HTTP_4XX" if code < 500 else
+                    "G1_LOGIN_HTTP_5XX"
+                )
+                return report
+            # Give the browser time to draw JS-rendered login inputs.
+            try:
+                page.locator('input[type="password"]').first.wait_for(
+                    state="attached", timeout=2500)
+            except Exception:
+                pass
+            # Count the structure only. Never read field values.
             num_password = page.locator('input[type="password"]').count()
             num_user = page.locator('input[type="email"], input[name*="mail"], input[name*="login"], input[type="text"]').count()
             report["status"] = (
