@@ -16,7 +16,7 @@ from urllib.parse import urlsplit
 
 from cryptography.fernet import Fernet
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
 from minifish.browser import PlaywrightBrowser
 from minifish.session_vault import EncryptedSessionVault
 
@@ -42,13 +42,15 @@ button:disabled{opacity:.5}#result{background:#1d2d46;padding:16px;border-radius
 </style></head><body><main>
 <h1>🐟 MiniFish｜G1b 模擬ログイン</h1>
 <p>架空のログインだけを練習。実際のランサーズやココナラには接続しません。
-GitHub Codespaces の 8002 / 6080 ポートは必ず Private にしてください。</p>
+GitHub Codespaces の 8002 / 6081 ポートは必ず Private にしてください。</p>
 <div id="result">状態を確認しています…</div>
 <button id="start">① 架空ログイン画面を起動</button>
-<a class="gui" id="desktop" href="#" target="_blank" rel="noopener">② ブラウザの画面を開く（6080）</a>
-<button id="mockClick">③ 架空のログインボタンを押す（模擬操作）</button>
-<button id="save">④ 暗号化して保存</button>
-<button id="verify">⑤ ブラウザ再起動で復元を確認</button>
+<button id="showPass">② この環境のVNCパスワードを表示</button>
+<p id="passInfo">パスワードは画面を開いた本人だけが確認できます。</p>
+<a class="gui" id="desktop" href="#" target="_blank" rel="noopener">③ ブラウザの画面を開く（6081）</a>
+<button id="mockClick">④ 架空のログインボタンを押す（模擬操作）</button>
+<button id="save">⑤ 暗号化して保存</button>
+<button id="verify">⑥ ブラウザ再起動で復元を確認</button>
 <p>外部サイトや本物のID・パスワードは入力しないでください。
 保存したものはCodespaces内部の架空セッションだけです。</p>
 <script>
@@ -57,7 +59,7 @@ const valid=/^[a-z0-9-]+-8002\.app\.github\.dev$/.test(host);
 const desktop=document.getElementById("desktop");
 if(valid)desktop.href="https://"+host.replace(/-8002\.app\.github\.dev$/,"-6080.app.github.dev")+"/vnc.html";
 else if(host==="127.0.0.1"||host==="localhost")
-desktop.href="http://"+host+":6080/vnc.html";
+desktop.href="http://"+host+":6081/vnc.html";
 else {desktop.removeAttribute("href");desktop.textContent="Private Codespaces 6080ポートを開く";}
 async function status(){
 const r=await fetch("/g1b/status",{credentials:"same-origin"});
@@ -74,6 +76,14 @@ method:"POST",credentials:"same-origin",headers:{"X-MiniFish-Mock-Action":"G1B"}
 if(!r.ok)document.getElementById("result").textContent="BLOCKED: "+r.status;
 await status();
 }
+document.getElementById("showPass").onclick=async ()=>{
+  const r=await fetch("/g1b/vnc-password",{
+    method:"POST",credentials:"same-origin",
+    headers:{"X-MiniFish-Mock-Action":"G1B"},cache:"no-store"});
+  const d=await r.json();
+  document.getElementById("passInfo").textContent=
+    r.ok?"Private VNC password: "+d.password:"BLOCKED: "+r.status;
+};
 document.getElementById("mockClick").onclick=()=>action("mock-click");
 for(const name of ["start","save","verify"])
 document.getElementById(name).onclick=()=>action(name);
@@ -298,3 +308,30 @@ def mock_click(request: Request):
         return manager.snapshot()
     except ValueError:
         raise HTTPException(409, "G1B_NOT_READY") from None
+
+
+@app.post("/g1b/vnc-password")
+def vnc_password(request: Request):
+    """Show the random mock-only VNC password in the private control page.
+
+    Never log it, include it in a GitHub Issue or commit it to the repository.
+    """
+    require_same_origin(request)
+    if not os.getenv("CODESPACE_NAME"):
+        raise HTTPException(403, "G1B_CODESPACE_REQUIRED")
+    p = private_root() / "vnc-password.txt"
+    try:
+        if p.is_symlink():
+            raise ValueError("G1B_PASSWORD_SYMLINK_BLOCKED")
+        info = p.stat()
+        if not stat.S_ISREG(info.st_mode) or stat.S_IMODE(info.st_mode) != 0o600:
+            raise ValueError("G1B_PASSWORD_PERMISSIONS_UNSAFE")
+        value = p.read_text(encoding="ascii")
+        if len(value) != 8 or not value.isalnum():
+            raise ValueError("G1B_PASSWORD_INVALID")
+    except (ValueError, OSError):
+        raise HTTPException(503, "G1B_PASSWORD_NOT_READY") from None
+    return JSONResponse(
+        {"password": value},
+        headers={"Cache-Control": "no-store", "Pragma": "no-cache"},
+    )
