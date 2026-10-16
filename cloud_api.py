@@ -164,9 +164,9 @@ CONTROL_HTML = r"""
 const ownerLink = document.getElementById('ownerLoginLink');
 const ownerNote = document.getElementById('ownerLoginNotice');
 const codehost = location.hostname;
-const onCodespace = /^[a-z0-9-]+-8000\\.app\\.github\\.dev$/.test(codehost);
+const onCodespace = /^[a-z0-9-]+-8000\.app\.github\.dev$/.test(codehost);
 if (onCodespace) {
-  ownerLink.href = "https://" + codehost.replace(/-8000\\.app\\.github\\.dev$/, "-8002.app.github.dev") + "/login-ready";
+  ownerLink.href = "https://" + codehost.replace(/-8000\.app\.github\.dev$/, "-8002.app.github.dev") + "/login-ready";
   ownerNote.textContent = "ログイン用のPRIVATE画面に移動します。開けない場合は設定がまだ準備中です。";
 } else {
   ownerLink.removeAttribute('href');
