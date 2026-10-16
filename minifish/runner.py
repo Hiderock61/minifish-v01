@@ -70,7 +70,11 @@ class MiniFishRunner:
         started = time.monotonic()
         history: list[dict[str, Any]] = []
 
-        if self.auth_site and (not self.profile_path or not Path(self.profile_path).is_file()):
+        has_stored_auth = bool(
+            (self.session_vault is not None and self.session_vault.path.is_file())
+            or (self.profile_path and Path(self.profile_path).is_file())
+        )
+        if self.auth_site and not has_stored_auth:
             state.status = "WAITING"
             state.final_result = "AUTH_REQUIRED: session file missing. Human login needed."
             state.ended_at = now_iso()
