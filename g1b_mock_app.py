@@ -169,21 +169,27 @@ class MockManager:
             self._note = note
 
     def _run(self, verify: bool, finish: Event) -> None:
+        stage = "VAULT"
         try:
             vault = mock_vault()
             if verify and vault.load() is None:
                 self._set("BLOCKED", "NO_MOCK_SESSION")
                 return
+            stage = "BROWSER"
             with PlaywrightBrowser(headless=False, session_vault=vault) as browser:
+                stage = "ROUTE"
                 assert browser.context is not None
                 browser.context.route("**/*", local_only_request)
+                stage = "NAVIGATE"
                 browser.goto(BASE + ("/mock/private" if verify else "/mock/login"))
+                stage = "OBSERVE"
                 if verify:
                     valid = "AUTHORIZED_TEST_ONLY" in browser.observe().text_excerpt
                     self._set("RESTORED_PASS" if valid else "BLOCKED",
                               "MOCK_SESSION_RESTORED" if valid else "MOCK_LOGIN_REQUIRED")
                     return
                 self._set("WAITING_USER", "OPEN_NO_VNC_AND_CLICK_MOCK_LOGIN")
+                stage = "WAITING"
                 deadline = time.monotonic() + MAX_SECONDS
                 while not finish.wait(0.15):
                     if self._mock_click.is_set():
@@ -192,6 +198,7 @@ class MockManager:
                         self._set("MOCK_CLICKED", "MOCK_LOGIN_ONLY_READY_TO_SAVE")
                     if time.monotonic() >= deadline:
                         raise TimeoutError("G1B_MOCK_LOGIN_TIMED_OUT")
+                stage = "FINISH"
                 browser.goto(BASE + "/mock/private")
                 if "AUTHORIZED_TEST_ONLY" not in browser.observe().text_excerpt:
                     raise ValueError("G1B_MOCK_LOGIN_NOT_VERIFIED")
@@ -204,7 +211,7 @@ class MockManager:
                         "G1B_KEY_SYMLINK_BLOCKED", "SESSION_VAULT_DECRYPT_FAILED"):
                 self._set("BLOCKED", code)
             else:
-                self._set("BLOCKED", "G1B_PRIVATE_SETUP_FAILED_" + type(exc).__name__)
+                self._set("BLOCKED", "G1B_PRIVATE_SETUP_FAILED_" + stage + "_" + type(exc).__name__)
 
 
 manager = MockManager()
