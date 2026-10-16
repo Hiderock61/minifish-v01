@@ -3,12 +3,32 @@
   "image": "mcr.microsoft.com/devcontainers/python:3.11",
   "postCreateCommand": "pip install -r requirements.txt && python -m playwright install --with-deps chromium",
   "postStartCommand": "bash start_all.sh",
-  "forwardPorts": [8000],
+  "forwardPorts": [
+    8000,
+    8002,
+    6080
+  ],
   "portsAttributes": {
+    "6080": {
+      "label": "MiniFish MOCK desktop only",
+      "onAutoForward": "notify",
+      "visibility": "private"
+    },
     "8000": {
       "label": "MiniFish Control",
       "onAutoForward": "openBrowser",
       "visibility": "private"
+    },
+    "8002": {
+      "label": "MiniFish MOCK G1b controls",
+      "onAutoForward": "notify",
+      "visibility": "private"
+    }
+  },
+  "features": {
+    "ghcr.io/devcontainers/features/desktop-lite:1": {
+      "webPort": "6080",
+      "password": "G1B_MOCK_ONLY"
     }
   }
 }
