@@ -19,6 +19,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
 from minifish.browser import PlaywrightBrowser
 from minifish.session_vault import EncryptedSessionVault
+from minifish.crowdworks_handoff import handoff as real_handoff
 
 app = FastAPI(title="MiniFish G1b Mock Login (NO REAL ACCOUNTS)", docs_url=None, redoc_url=None)
 HOST = "127.0.0.1"
@@ -51,7 +52,8 @@ GitHub Codespaces の 8002 / 6081 ポートは必ず Private にしてくださ�
 <button id="mockClick">④ 架空のログインボタンを押す（模擬操作）</button>
 <button id="save">⑤ 暗号化して保存</button>
 <button id="verify">⑥ ブラウザ再起動で復元を確認</button>
-<p>外部サイトや本物のID・パスワードは入力しないでください。
+<p><a class="gui" href="/login-ready">実サイト・クラウドワークスのログイン準備へ</a></p>
+<p>この模擬画面には本物のID・パスワードを入力しないでください。
 保存したものはCodespaces内部の架空セッションだけです。</p>
 <script>
 const host=location.hostname;
@@ -335,3 +337,110 @@ def vnc_password(request: Request):
         {"password": value},
         headers={"Cache-Control": "no-store", "Pragma": "no-cache"},
     )
+
+
+REAL_LOGIN_HTML = r"""<!doctype html><html lang="ja"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="referrer" content="no-referrer"><title>🐟 MiniFish｜クラウドワークスのログイン</title>
+<style>
+body{margin:0;background:#122032;color:#f6faff;font:16px system-ui,sans-serif}
+main{max-width:600px;margin:auto;padding:22px 16px}
+h1{font-size:24px}p{line-height:1.7}
+button,a.gui{display:block;box-sizing:border-box;width:100%;margin:12px 0;
+padding:15px;border:0;border-radius:12px;background:#a3ceff;color:#092138;
+font-weight:700;font-size:16px;text-align:center;text-decoration:none}
+button:disabled{opacity:.5}#status{padding:14px;border-radius:12px;background:#243650}
+.note{color:#c3d4ea;font-size:14px}
+</style></head><body><main>
+<h1>🐟 クラウドワークス｜MiniFishログイン</h1>
+<p>MiniFish専用ブラウザを開いて、いつもの方法で本人がログインします。
+ChatGPTへパスワードを貼る必要はありません。</p>
+<div id="status">接続状態を確認しています…</div>
+<button id="open">① MiniFishでログイン画面を開く</button>
+<button id="password">② 専用ブラウザの画面パスワードを表示</button>
+<p id="passNote" class="note">画面共有のためのパスワードです。クラウドワークスのパスワードではありません。</p>
+<a class="gui" id="desktop" target="_blank" rel="noopener noreferrer">③ MiniFishの画面を開く（Private）</a>
+<p class="note">画面の中でログインしてください。ログイン操作はMiniFishが自動で行いません。</p>
+<button id="finish">④ ログインできたら保存を試す</button>
+<button id="reopen">保存した画面を開き直す</button>
+<button id="stop">中止する</button>
+<p class="note">認証の成功は、保存しただけでは証明できません。
+アクセス拒否・別サイトへの移動・追加料金が必要ならそこで停止します。
+Codespacesの画面ポートは必ずPrivateにしてください。</p>
+<script>
+const host=location.hostname;
+const codespace=/^[a-z0-9-]+-8002\.app\.github\.dev$/.test(host);
+const local=host==="127.0.0.1"||host==="localhost";
+const desktop=document.getElementById("desktop");
+if(codespace) desktop.href="https://"+host.replace(/-8002\.app\.github\.dev$/,"-6081.app.github.dev")+"/vnc.html";
+else if(local) desktop.href="http://"+host+":6081/vnc.html";
+else {desktop.removeAttribute("href");desktop.textContent="プライベート画面が見つかりません";}
+const headers={"X-MiniFish-Mock-Action":"G1B"};
+async function refresh(){
+ try{
+  const d=await(await fetch("/g1/owner/status",{cache:"no-store",credentials:"same-origin"})).json();
+  document.getElementById("status").textContent="現在地："+d.status;
+  document.getElementById("open").disabled=d.busy;
+  document.getElementById("reopen").disabled=d.busy;
+  document.getElementById("finish").disabled=!d.busy;
+  document.getElementById("stop").disabled=!d.busy;
+ }catch(e){document.getElementById("status").textContent="画面に接続できません";}
+}
+async function run(name){
+ const res=await fetch("/g1/owner/"+name,{method:"POST",headers,
+   credentials:"same-origin",cache:"no-store"});
+ if(!res.ok) document.getElementById("status").textContent="STOP："+res.status;
+ await refresh();
+}
+for(const name of ["open","finish","reopen","stop"]){
+ document.getElementById(name).onclick=()=>run(name);
+}
+document.getElementById("password").onclick=async()=>{
+ const res=await fetch("/g1b/vnc-password",{method:"POST",headers,
+   credentials:"same-origin",cache:"no-store"});
+ const val=await res.json();
+ document.getElementById("passNote").textContent=res.ok?
+ "MiniFishの画面用："+val.password+"（ほかには共有しない）":
+ "画面の認証情報はまだ準備されていません";
+};
+refresh();setInterval(refresh,1800);
+</script></main></body></html>"""
+
+
+@app.get("/login-ready", response_class=HTMLResponse)
+def live_login_page(request: Request):
+    # This is a private Codespaces browser page, not a public login gateway.
+    host = request.headers.get("host", "")
+    if not (os.getenv("CODESPACE_NAME")
+            and re.fullmatch(r"[a-z0-9-]+-8002\.app\.github\.dev", host)):
+        raise HTTPException(403, "OWNER_PRIVATE_CODESPACE_ONLY")
+    return HTMLResponse(
+        REAL_LOGIN_HTML,
+        headers={"Cache-Control": "no-store", "Referrer-Policy": "no-referrer"},
+    )
+
+
+@app.get("/g1/owner/status")
+def owner_login_status(request: Request):
+    if not os.getenv("CODESPACE_NAME"):
+        raise HTTPException(403, "OWNER_PRIVATE_CODESPACE_ONLY")
+    return JSONResponse(real_handoff.status(), headers={"Cache-Control": "no-store"})
+
+
+@app.post("/g1/owner/{command}")
+def owner_login_action(command: str, request: Request):
+    require_same_origin(request)
+    if command not in ("open", "finish", "reopen", "stop"):
+        raise HTTPException(404, "UNKNOWN_OWNER_COMMAND")
+    try:
+        if command == "open":
+            real_handoff.launch()
+        elif command == "reopen":
+            real_handoff.launch(check_saved=True)
+        elif command == "finish":
+            real_handoff.finish()
+        else:
+            real_handoff.cancel()
+    except ValueError:
+        raise HTTPException(409, "OWNER_LOGIN_NOT_READY") from None
+    return JSONResponse(real_handoff.status(), headers={"Cache-Control": "no-store"})
