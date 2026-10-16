@@ -204,7 +204,7 @@ class MockManager:
                         "G1B_KEY_SYMLINK_BLOCKED", "SESSION_VAULT_DECRYPT_FAILED"):
                 self._set("BLOCKED", code)
             else:
-                self._set("BLOCKED", "G1B_PRIVATE_SETUP_FAILED")
+                self._set("BLOCKED", "G1B_PRIVATE_SETUP_FAILED_" + type(exc).__name__)
 
 
 manager = MockManager()
