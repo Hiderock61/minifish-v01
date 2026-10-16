@@ -78,6 +78,7 @@ jobs:
               "supervisor_pass=" + str(d.get("supervisor_pass", False)),
               "saved_visible=" + str(d.get("saved_visible", False)),
               "error_layer=" + str(d.get("error_layer", "NO_REPORT")),
+              "error_code=" + str(d.get("error_code", "NOT_RECORDED")),
               "Raw model text, key values and browser captures are not published.",
           ]
           Path("live_safe_result.md").write_text("\n".join(lines), encoding="utf-8")
