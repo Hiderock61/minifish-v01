@@ -8,7 +8,6 @@ and reports fixed status codes. No credentials or page text in logs.
 from __future__ import annotations
 
 import os
-import secrets
 import stat
 from pathlib import Path
 from threading import Event, Lock, Thread
@@ -177,8 +176,11 @@ class OwnerLoginHandoff:
                 self._set("WAITING_FOR_HUMAN")
                 # Browser GUI remains interactive; no Playwright auto clicks.
                 # Worker never reads the password field or submits login.
-                if not finish.wait(WAIT_SECONDS):
-                    raise _StopWithoutSaving()
+                from time import monotonic
+                deadline = monotonic() + WAIT_SECONDS
+                while not finish.wait(0.2):
+                    if cancel.is_set() or monotonic() >= deadline:
+                        raise _StopWithoutSaving()
                 if cancel.is_set():
                     raise _StopWithoutSaving()
                 stage = "SESSION_SAVE"
