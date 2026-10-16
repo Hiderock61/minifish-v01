@@ -16,6 +16,8 @@ from typing import Any
 from cryptography.fernet import Fernet, InvalidToken
 
 MAX_STATE_BYTES = 2_000_000
+# Fernet ciphertext is base64 encoded and larger than its plaintext.
+MAX_VAULT_BYTES = 3_000_000
 
 
 class EncryptedSessionVault:
@@ -44,16 +46,18 @@ class EncryptedSessionVault:
             meta = os.fstat(fd)
             if not stat.S_ISREG(meta.st_mode) or stat.S_IMODE(meta.st_mode) & 0o077:
                 raise ValueError("SESSION_VAULT_PERMISSIONS_UNSAFE")
-            if meta.st_size <= 0 or meta.st_size > MAX_STATE_BYTES:
+            if meta.st_size <= 0 or meta.st_size > MAX_VAULT_BYTES:
                 raise ValueError("SESSION_VAULT_SIZE_INVALID")
             with os.fdopen(fd, "rb") as reader:
                 fd = -1
-                ciphertext = reader.read(MAX_STATE_BYTES + 1)
+                ciphertext = reader.read(MAX_VAULT_BYTES + 1)
         finally:
             if fd >= 0:
                 os.close(fd)
         try:
             cleartext = self._cipher.decrypt(ciphertext)
+            if len(cleartext) > MAX_STATE_BYTES:
+                raise ValueError("SESSION_VAULT_SIZE_INVALID")
             return self._validate(json.loads(cleartext))
         except (InvalidToken, ValueError, UnicodeError, TypeError):
             raise ValueError("SESSION_VAULT_DECRYPT_FAILED") from None
