@@ -189,6 +189,7 @@ class MockManager:
                     if self._mock_click.is_set():
                         self._mock_click.clear()
                         browser.page.get_by_role("button", name="Mock login").click()
+                        self._set("MOCK_CLICKED", "MOCK_LOGIN_ONLY_READY_TO_SAVE")
                     if time.monotonic() >= deadline:
                         raise TimeoutError("G1B_MOCK_LOGIN_TIMED_OUT")
                 browser.goto(BASE + "/mock/private")
