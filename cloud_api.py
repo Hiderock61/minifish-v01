@@ -176,15 +176,19 @@ const ownerUrl = onCodespace ?
 function ownerState(state) {
   const status=state.status || "UNKNOWN";
   const messages={
-    READY:"専用ブラウザの準備ができました。ログインへ進めます。",
+    READY:"ログイン用の画面と表示装置が応答しています。Privateで開けることを確認してからログインします。",
     OFFLINE:"まだ起動していません。下のボタンで起動できます。",
     STARTING:"いま起動しています。しばらくお待ちください。",
-    PARTIAL_NEEDS_INSPECTION:"一部が起動できていません。ログインせず待機してください。",
+    PARTIAL_NEEDS_INSPECTION:"画面か操作装置の片方が応答しません。ログインせず工務店で修理します。",
     CODESPACE_REQUIRED:"Codespacesのプライベート画面でのみ利用できます。",
     SCRIPT_MISSING:"MiniFishの新しい部品が足りません。",
     PRIVATE_DIRECTORY_UNSAFE:"保存先の安全設定を確認する必要があります。",
     PRIVATE_LOG_UNSAFE:"起動記録の安全設定を確認する必要があります。",
-    BOOT_BLOCKED:"起動が止まりました。ログインしないでください。"
+    BOOT_BLOCKED:"起動に失敗しました。再試行できますが、ログインはまだしないでください。",
+    DESKTOP_MISSING:"画面共有に必要な部品がありません。再構築の完了状態を調べます。",
+    NOVNC_MISSING:"画面共有の表示部品が見つかりません。",
+    DESKTOP_IN_USE:"専用画面の番号がほかの装置で使用されています。",
+    AUTH_FILE_UNSAFE:"画面の認証情報の保護設定に問題があります。安全のため停止します。"
   };
   ownerNote.textContent=messages[status]||"準備が確認できません。ログインはまだしないでください。";
   if(ownerUrl && status==="READY") {
