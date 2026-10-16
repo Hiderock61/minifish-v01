@@ -35,3 +35,13 @@
 4. Codespaces費用・Privateポート・認証鍵失効を確認する実機手順。
 
 無断ログイン、CAPTCHA回避、第三者投稿、応募、購入は行わない。
+
+## 2026-10-16追加｜ログインなしで「文字を書いて保存」まで拡張
+
+- 実Webのログイン入口観測は[GitHub Actions RUN 38863964753](https://github.com/Hiderock61/minifish-v01/actions/runs/38863964753)で再実行。
+- 今回の観測値：`lancers=BLOCKED(G1_LOGIN_HTTP_4XX)`、`coconala=BLOCKED(G1_LOGIN_HTTP_403)`、`crowdworks=LOGIN_FIELDS_VISIBLE`、`note=LOGIN_PAGE_ONLY`。CloudWorksだけログイン欄まで到達。**他3件をログイン直前まで完走したとは主張しない。**
+- 追加装置 `minifish/form_draft.py` は、入力欄が1つだけと確認→日本語入力→値を突合→人間の保存承認待ち→1回だけ保存→別GETで読み戻し→保存済を検品する。違うURL・曖昧な入力欄・途中内容変更・重複保存はSTOP。曖昧な成功で再送しない。
+- `tests/test_noauth_local_save_e2e.py` に **実Chromiumとローカルの架空HTTPサーバー**を使う保存試験を追加。ログイン0、外部サイトへ文章の送信0、独立の再読込を含み14/14 PASS。保存したのはこの架空サーバーだけ。
+- 本人プロフィールの保存は**一切行っていない**。書込み機能を実サイトへ配線するのは本人が後日ログインし、画面の構造と操作許可を確認したときだけ。
+
+**NEXT**：本人が気の向いた日に1サイトだけ選び、PRIVATEブラウザの実機動作／ログインを確認する。それまではログイン操作を要求しない。ログイン情報のコピーやTinyFishのVaultからの抽出もしない。
