@@ -57,10 +57,10 @@ GitHub Codespaces の 8002 / 6081 ポートは必ず Private にしてくださ�
 const host=location.hostname;
 const valid=/^[a-z0-9-]+-8002\.app\.github\.dev$/.test(host);
 const desktop=document.getElementById("desktop");
-if(valid)desktop.href="https://"+host.replace(/-8002\.app\.github\.dev$/,"-6080.app.github.dev")+"/vnc.html";
+if(valid)desktop.href="https://"+host.replace(/-8002\.app\.github\.dev$/,"-6081.app.github.dev")+"/vnc.html";
 else if(host==="127.0.0.1"||host==="localhost")
 desktop.href="http://"+host+":6081/vnc.html";
-else {desktop.removeAttribute("href");desktop.textContent="Private Codespaces 6080ポートを開く";}
+else {desktop.removeAttribute("href");desktop.textContent="Private Codespaces 6081ポートを開く";}
 async function status(){
 const r=await fetch("/g1b/status",{credentials:"same-origin"});
 const d=await r.json();
