@@ -142,6 +142,8 @@ def test_private_port_and_no_embedded_password():
     assert 6080 not in cfg["forwardPorts"]
     assert cfg["portsAttributes"]["6081"]["visibility"] == "private"
     assert cfg["portsAttributes"]["8002"]["visibility"] == "private"
+    for port in ("6080", "5901", "5911"):
+        assert cfg["portsAttributes"][port]["onAutoForward"] == "ignore"
     assert "password" not in cfg["features"]["ghcr.io/devcontainers/features/desktop-lite:1"]
     script = Path("start_g1b_mock.sh").read_text(encoding="utf-8")
     assert 'secrets.choice(alphabet)' in script
