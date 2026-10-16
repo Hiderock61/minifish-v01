@@ -6,11 +6,11 @@
   "forwardPorts": [
     8000,
     8002,
-    6080
+    6081
   ],
   "portsAttributes": {
-    "6080": {
-      "label": "MiniFish MOCK desktop only",
+    "6081": {
+      "label": "MiniFish G1b private mock desktop (random password)",
       "onAutoForward": "notify",
       "visibility": "private"
     },
@@ -27,8 +27,7 @@
   },
   "features": {
     "ghcr.io/devcontainers/features/desktop-lite:1": {
-      "webPort": "6080",
-      "password": "G1B_MOCK_ONLY"
+      "webPort": "6080"
     }
   }
 }
