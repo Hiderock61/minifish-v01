@@ -385,7 +385,7 @@ def run_worker(run_id: str, request: RunRequest) -> None:
         max_steps=25,
         max_duration_seconds=180,
         headless=True,
-        profile_path=PROFILE_PATH,
+        profile_path=None,  # Never persist live login cookies in legacy plaintext JSON
         capture_dir=str(run_dir / "captures"),
         log_path=str(run_dir / "run.json"),
         on_event=lambda state, _event: save_snapshot(
