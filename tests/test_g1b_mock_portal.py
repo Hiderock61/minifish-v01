@@ -100,7 +100,8 @@ def test_private_mock_controller_save_relaunch_and_revoke(tmp_path):
         assert e.value.code == 403
 
         request("/g1b/start", method="POST", headers=HEADERS)
-        assert wait_for({"WAITING_USER", "BLOCKED"})["status"] == "WAITING_USER"
+        first_state = wait_for({"WAITING_USER", "BLOCKED"})
+        assert first_state["status"] == "WAITING_USER", first_state
         with pytest.raises(urllib.error.HTTPError) as e:
             request("/g1b/start", method="POST", headers=HEADERS)
         assert e.value.code == 409
