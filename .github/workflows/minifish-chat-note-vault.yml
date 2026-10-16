@@ -1,0 +1,26 @@
+name: MiniFish chat and encrypted login compatibility
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  private-intake-and-session:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install existing dependencies
+        run: |
+          pip install -r requirements.txt
+          python -m playwright install --with-deps chromium
+      - name: Test ciphertext-only chat intake and session vault with synthetic login
+        env:
+          MINIFISH_G1_E2E: "1"
+        run: |
+          PYTHONPATH=. pytest -q tests/test_chat_handoff.py tests/test_chat_note_vault_integration.py tests/test_session_vault.py tests/test_session_g1_e2e.py tests/test_note_conveyor.py
