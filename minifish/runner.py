@@ -7,6 +7,7 @@ import time
 
 from .models import Action, Event, LedgerEntry, RunState, now_iso
 from .browser import PlaywrightBrowser
+from .session_vault import EncryptedSessionVault
 from .planner import Planner
 from .guard import SupervisorGate
 from .auth import SiteAuth, check_login, origin, public_url, preflight_action
@@ -30,6 +31,7 @@ class MiniFishRunner:
         executable_path: str | None = None,
         profile_path: str | None = None,
         auth_site: SiteAuth | None = None,
+        session_vault: EncryptedSessionVault | None = None,
         capture_dir: str | None = None,
         log_path: str | None = None,
         on_event: Callable[[RunState, Event], None] | None = None,
@@ -42,6 +44,7 @@ class MiniFishRunner:
         self.executable_path = executable_path
         self.profile_path = profile_path
         self.auth_site = auth_site
+        self.session_vault = session_vault
         self.private_mode = auth_site is not None
         self.capture_dir = capture_dir
         self.log_path = Path(log_path) if log_path else None
@@ -79,6 +82,7 @@ class MiniFishRunner:
                 headless=self.headless,
                 executable_path=self.executable_path,
                 profile_path=self.profile_path,
+                session_vault=self.session_vault,
                 capture_dir=None if self.private_mode else self.capture_dir,
                 save_profile_on_close=not self.private_mode,
             ) as browser:
