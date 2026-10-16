@@ -27,6 +27,32 @@ GOAL = (
 )
 
 
+def classify_ai_failure(error: str | None) -> str:
+    """Return an allowlisted diagnosis; never publish the raw SDK error.
+
+    The exception stored privately by MiniFishRunner can contain request
+    context. This classifier emits only a fixed category.
+    """
+    s = (error or "").lower()
+    if not s:
+        return "OUTPUT_NOT_VERIFIED"
+    if any(x in s for x in ("insufficient_quota", "billing_hard_limit", "quota_exceeded")):
+        return "API_QUOTA_OR_BILLING"
+    if any(x in s for x in ("authenticationerror", "invalid_api_key", "error code: 401")):
+        return "API_AUTHENTICATION"
+    if any(x in s for x in ("permissiondeniederror", "error code: 403")):
+        return "API_PERMISSION_DENIED"
+    if any(x in s for x in ("ratelimiterror", "error code: 429")):
+        return "API_429_RATE_OR_QUOTA_UNKNOWN"
+    if any(x in s for x in ("apiconnectionerror", "apitimeouterror", "connecttimeout")):
+        return "API_NETWORK_OR_TIMEOUT"
+    if any(x in s for x in ("jsondecodeerror", "ai_action_outside_internal_allowlist")):
+        return "AI_OUTPUT_FORMAT_OR_SAFETY_GATE"
+    if "ai_call_limit" in s:
+        return "API_CALL_LIMIT"
+    return "UNCLASSIFIED_PRIVATE_ERROR"
+
+
 class BoundedResponses:
     """Intercept each planned action BEFORE an API call is made."""
     def __init__(self, downstream: Any, limit: int = MAX_AI_CALLS):
@@ -166,6 +192,7 @@ def run_ai_tower_trial(job_id: str, *, mode: str = "mock",
         "external_web_navigation": False,
         "error_layer": None if success else (
             "AI_ACTION_OR_RUNNER_FAILED" if state.error else "OUTPUT_NOT_VERIFIED"),
+        "error_code": None if success else classify_ai_failure(state.error),
     }
     (root / "public_report.json").write_text(
         json.dumps(public, ensure_ascii=False, indent=2), encoding="utf-8"
