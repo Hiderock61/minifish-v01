@@ -35,7 +35,9 @@ GitHub Actionsもこの模擬テストを自動実行する。
 
 ## 本物のnote下書きへ移すとき
 - `.minifish/auth_sites.json` に note.com をサイト別登録し、本人の同意を得た操作範囲だけ `allow_actions` を有効化する（下書き入力のための `click/fill`）。
-- 初回は本人がCodespaces側のChromiumでnoteにログイン。Cookie/IndexedDBは`.minifish/sites/note_jp/storage.json`に非公開保存。
+- **ログイン保存方式の変更（合流試作）**：従来の `.minifish/sites/note_jp/storage.json`（平文）は、note下書き経路の認証として**使わない**。無断削除も行わない。
+- 新しい読み取り先は `.minifish/sites/note_jp/storage.vault`（Fernet暗号化）。秘密鍵 `MINIFISH_NOTE_SESSION_KEY` はPrivate Codespace内のSecretとして別管理。鍵やCookieをGitHub/Notion/ログへ書かない。
+- 新しい鍵生成・本人ログイン画面からの暗号化保存は**別工程・未実施**。現段階の実note下書き経路は鍵・vaultが無ければ `AUTH_REQUIRED` で停止する。通常のnote確認作業は保存済みセッションを勝手に上書きしない。
 - `.minifish/note_editor.json`に編集画面URL、タイトル欄、本文欄、明示的な下書き保存ボタン、保存成功の表示用セレクタを登録する。
 - `python -m minifish.note_conveyor <private-job.json> --live` で1本だけ下書き保存を試す。**現在この実サイト接続は未検証**。
 - 文章はGitHubやパブリックIssueへ置かない。私有原稿はCodespacesの`.minifish/`など非公開領域に置く。
@@ -45,3 +47,11 @@ noteには自動投稿のための一般公開された公式APIが確認でき�
 
 ## 次工程
 記事原稿をChatGPTから渡す入口（iPhoneの操縦席に記事フォームを追加）→ 実noteのログイン済みDOMの事実確認 → note下書き1件 → 結果とURLを非秘密台帳に保存 → note→オノノケ/両方への搬送。
+
+## 2026-10-16｜PR #29 と G1a session vault 合流試験（Draft、実note禁止）
+- 暗号化記事受信：`minifish/chat_handoff.py`。原稿はPrivate Codespace Inboxへ保存し、公開Issueに平文を載せない。
+- 暗号化ログイン保存：PR #33 の既存 `EncryptedSessionVault` を移植・共用し、従来BrowserのAPI互換を保持。
+- **鍵は2種類**：記事受信用X25519秘密鍵と、ログイン維持用Fernet秘密鍵。互いに交換・兼用しない。
+- この合流工程で検査するのは**架空原稿・localhost模擬ログイン**のみ。実note認証・下書き保存、Codespaces起動・常駐は未実証。
+- PR #2/#4/#15/#29/#33 を勝手にmainへマージせず、独立したDraft合流枝として監査する。
+- 既存cloud APIの一部サイト別レガシー認証経路の移行は別途監査対象。本PRはそれを実運用完了と認定しない。
