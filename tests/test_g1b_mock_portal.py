@@ -63,7 +63,8 @@ def test_gate_rejects_real_domains_and_unrelated_ports():
 
 def test_private_codespaces_html_contract():
     assert "G1b 模擬ログイン" in g1b_mock_app.HTML
-    assert "-6080.app.github.dev" in g1b_mock_app.HTML
+    assert "-6081.app.github.dev" in g1b_mock_app.HTML
+    assert "showPass" in g1b_mock_app.HTML
     assert "X-MiniFish-Mock-Action" in g1b_mock_app.HTML
     assert "mockClick" in g1b_mock_app.HTML
 
@@ -133,3 +134,77 @@ def test_private_mock_controller_save_relaunch_and_revoke(tmp_path):
         except subprocess.TimeoutExpired:
             server.kill()
             server.wait(timeout=5)
+
+
+def test_private_port_and_no_embedded_password():
+    cfg = json.loads(Path(".devcontainer/devcontainer.json").read_text(encoding="utf-8"))
+    assert 6081 in cfg["forwardPorts"]
+    assert 6080 not in cfg["forwardPorts"]
+    assert cfg["portsAttributes"]["6081"]["visibility"] == "private"
+    assert cfg["portsAttributes"]["8002"]["visibility"] == "private"
+    assert "password" not in cfg["features"]["ghcr.io/devcontainers/features/desktop-lite:1"]
+    script = Path("start_g1b_mock.sh").read_text(encoding="utf-8")
+    assert 'secrets.choice(alphabet)' in script
+    assert 'tigervncserver :11' in script
+    assert '--listen 6081' in script
+    assert '-localhost -SecurityTypes VncAuth' in script
+    assert 'CODESPACE_NAME' in script
+    assert "G1B_MOCK_ONLY" not in script
+    result = subprocess.run(["bash", "-n", "start_g1b_mock.sh"],
+                            capture_output=True, text=True, check=False)
+    assert result.returncode == 0
+    result = subprocess.run(["env", "-u", "CODESPACE_NAME",
+                             "-u", "MINIFISH_G1B_LOCAL_TEST", "bash", "start_g1b_mock.sh"],
+                            capture_output=True, text=True, check=False)
+    assert result.returncode != 0
+    assert "G1B_BLOCKED_NOT_PRIVATE_CODESPACE" in result.stdout
+
+
+def _fake_request(headers):
+    from starlette.requests import Request
+    scope = {
+        "type": "http", "method": "POST", "scheme": "http",
+        "server": ("127.0.0.1", 8002), "path": "/g1b/vnc-password",
+        "root_path": "", "query_string": b"",
+        "headers": [(k.lower().encode(), v.encode()) for k, v in headers.items()],
+    }
+    return Request(scope)
+
+
+def test_vnc_password_only_revealed_on_private_authenticated_mock_control(monkeypatch, tmp_path):
+    from fastapi import HTTPException
+    private = tmp_path / "private"
+    private.mkdir(mode=0o700)
+    secret = private / "vnc-password.txt"
+    secret.write_text("X3y4z5Q7", encoding="ascii")
+    secret.chmod(0o600)
+    monkeypatch.setenv("CODESPACE_NAME", "test-mock-codespace")
+    monkeypatch.setattr(g1b_mock_app, "private_root", lambda: private)
+
+    with pytest.raises(HTTPException) as exc:
+        g1b_mock_app.vnc_password(_fake_request({"host": "127.0.0.1:8002"}))
+    assert exc.value.status_code == 403
+
+    with pytest.raises(HTTPException) as exc:
+        g1b_mock_app.vnc_password(_fake_request({
+            "host": "127.0.0.1:8002",
+            "origin": "https://attacker.example",
+            "x-minifish-mock-action": "G1B",
+        }))
+    assert exc.value.status_code == 403
+
+    valid = _fake_request({
+        "host": "127.0.0.1:8002",
+        "origin": "http://127.0.0.1:8002",
+        "x-minifish-mock-action": "G1B",
+    })
+    response = g1b_mock_app.vnc_password(valid)
+    assert response.headers["Cache-Control"] == "no-store"
+    assert json.loads(response.body)["password"] == "X3y4z5Q7"
+    assert "X3y4z5Q7" not in g1b_mock_app.HTML
+    assert "X3y4z5Q7" not in str(g1b_mock_app.status())
+
+    secret.chmod(0o644)
+    with pytest.raises(HTTPException) as exc:
+        g1b_mock_app.vnc_password(valid)
+    assert exc.value.status_code == 503
