@@ -22,15 +22,20 @@ GitHub Issueに元記事や会話ログをそのまま投稿すると、下書�
 鍵・原稿はGitHubリポジトリ、Issueコメント、Actionsログに書かない。
 公開鍵だけは公開可能。なおIssueの暗号文自体はGitHubに残る。
 
-## 一度だけ必要な準備（未実施）
-1. **PR #2 → PR #4 → PR #15 の依存関係に沿ってテスト・統合判断**。
-2. この工区のコードを既存Codespaceへ反映する。
-3. Codespaceで `python -m minifish.chat_handoff keygen` を実行する。
-4. 作られた **recipient_public.pem（公開鍵のみ）** をChatGPTが読み取れる場所へ登録する。秘密鍵を渡さない。
-5. 既存MiniFish Bridge Workerが実際に動いているか検証する。
-6. 初回は **架空の短い公開可能なテスト原稿** のみ送る。
+## 初回セットアップ（Codespaces実機は未実施）
+1. PR #34の開発枝 `feat/chat-note-vault-integration-v01` で **既存または新規Codespaceを起動**する。mainには未統合。
+2. 既存の `.devcontainer/devcontainer.json` が `bash start_all.sh` を自動起動。
+3. `CODESPACES=true` に限り `python -m minifish.chat_handoff bootstrap` を実行。
+4. 秘密鍵はCodespace内 `.minifish/handoff/recipient_private.pem`（0600）、公開鍵は同じPrivateフォルダ内に作成。既存鍵は上書きしない。
+5. **公開鍵だけ**を既存GitHub Issue #5へ本人アカウントで通知。公開するのはPEMのPUBLIC KEYとfingerprintだけ。原稿・Cookie・Private KEYは送らない。
+6. 通知済みfingerprintをCodespaceの非公開領域で記録し、同一鍵の二重通知を回避。鍵が片方しかない、不正権限、receiptの不一致はBLOCKEDで停止。
+7. ChatGPTがIssue #5の公開鍵を照合できた後、架空記事を暗号化して `[MINIFISH JOB]` Issueで送る。稼働中Workerが受信すれば status/content_keyだけ返却する。
 
-CodespacesはiPhoneのローカル記憶領域ではない。Codespaceの削除や再作成、ストレージ消失では秘密鍵・受信原稿が失われうる。停止中はBridgeが指令を受け取れない。
+**未実施**：今回のCodespaces本体の起動確認、実鍵の生成・Issue #5への公開鍵登録、本チャットから暗号文Issueの実送信、Workerによる本番Codespace受信。
+**テスト済**：偽のCodespaces環境変数を使うローカル／CI単体試験。秘密鍵不流出・1回通知・二重通知拒否・拒否条件。
+GH CLIのIssue書込み権限が無い場合、公開鍵通知はBLOCKEDで停止する。既存鍵は勝手に消さない。
+
+CodespacesはiPhoneローカルではない。停止中はBridgeを処理できない。Codespace削除・再作成ではPrivate鍵や未発表記事が失われる可能性がある。
 
 ## 指令の形（公開GitHubには暗号文のみ）
 Issueタイトル：`[MINIFISH JOB] Encrypted note intake`
@@ -66,3 +71,9 @@ ChatGPT側は `seal_article(article, recipient_public_pem)` で封印した後�
 - 同一原稿の二重取り込みなし
 - 返却コメントに原文・秘密鍵・URLの漏洩なし
 - Browser/Agent/課金/API送信 0
+
+## 2026-10-16｜自動bootstrapコードの模擬検証
+- [Draft PR #34](https://github.com/Hiderock61/minifish-v01/pull/34) にCodespaces起動時の鍵生成／公開鍵だけのIssue #5通知処理を追加。mainは未変更。
+- 専用の暗号化原稿・保存庫・模擬ログインCI [Actions](https://github.com/Hiderock61/minifish-v01/actions/runs/38860155819) PASS。
+- 通常回帰 [Actions](https://github.com/Hiderock61/minifish-v01/actions/runs/38860155888) PASS。
+- 実Codespaces鍵生成・実暗号文受信を示す証拠は **なし**。自動起動できるコードと、稼働している事実は分ける。

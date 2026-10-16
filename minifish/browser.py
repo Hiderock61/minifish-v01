@@ -9,6 +9,7 @@ import tempfile
 from playwright.sync_api import sync_playwright, Page, Browser, BrowserContext, Playwright
 
 from .models import Observation, Action
+from .session_vault import EncryptedSessionVault
 
 
 class PlaywrightBrowser:
@@ -21,10 +22,14 @@ class PlaywrightBrowser:
         profile_path: str | None = None,
         save_profile_on_close: bool = True,
         capture_dir: str | None = None,
+        session_vault: EncryptedSessionVault | None = None,
     ) -> None:
         self.headless = headless
         self.executable_path = executable_path or os.getenv("MINIFISH_CHROMIUM_PATH")
+        if profile_path and session_vault:
+            raise ValueError("SESSION_VAULT_AND_PLAINTEXT_PROFILE_CONFLICT")
         self.profile_path = Path(profile_path) if profile_path else None
+        self.session_vault = session_vault
         self.save_profile_on_close = save_profile_on_close
         self.capture_dir = Path(capture_dir) if capture_dir else None
         if self.capture_dir:
@@ -45,14 +50,22 @@ class PlaywrightBrowser:
         self.browser = self._pw.chromium.launch(**launch_kwargs)
 
         context_kwargs: dict[str, Any] = {}
-        if self.profile_path and self.profile_path.exists():
+        if self.session_vault:
+            state = self.session_vault.load()
+            if state is not None:
+                context_kwargs["storage_state"] = state
+        elif self.profile_path and self.profile_path.exists():
             context_kwargs["storage_state"] = str(self.profile_path)
         self.context = self.browser.new_context(**context_kwargs)
         self.page = self.context.new_page()
         return self
 
     def __exit__(self, exc_type, exc, tb) -> None:
-        if self.context and self.profile_path and self.save_profile_on_close:
+        if self.context and self.session_vault and self.save_profile_on_close and exc_type is None:
+            # Only successful explicit sessions can be checkpointed. Note reads
+            # set save_profile_on_close=False to protect the existing login.
+            self.session_vault.save(self.context.storage_state(indexed_db=True))
+        elif self.context and self.profile_path and self.save_profile_on_close:
             self.profile_path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
             fd, temporary = tempfile.mkstemp(prefix=".state-", dir=str(self.profile_path.parent))
             try:

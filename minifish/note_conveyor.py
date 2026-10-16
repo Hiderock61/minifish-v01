@@ -18,6 +18,7 @@ from typing import Any
 
 from .auth import SiteAuth, check_login, load_site, preflight_action, state_path
 from .browser import PlaywrightBrowser
+from .session_vault import EncryptedSessionVault
 from .models import Action
 
 _ALLOWED_TARGETS = frozenset({"note", "ononoke"})
@@ -215,10 +216,18 @@ def run_live(article: Article, *, config: Path, selectors_path: Path,
     if previous:
         return {"status": "ALREADY_SAVED", "content_key": article.content_key,
                 "draft_url": previous.get("draft_url", "")}
-    state = state_path(site_id, state_root)
-    if not state.is_file():
+    # Only encrypted vaults may authorize draft submission. Legacy plaintext
+    # storage.json remains untouched but can no longer authorize this route.
+    # A successful read must NEVER overwrite an existing login session.
+    vault_file = state_root / site_id / "storage.vault"
+    private_key = os.environ.get("MINIFISH_NOTE_SESSION_KEY", "")
+    if not private_key or not vault_file.is_file():
         return {"status": "AUTH_REQUIRED", "content_key": article.content_key}
-    with PlaywrightBrowser(headless=True, profile_path=str(state),
+    try:
+        vault = EncryptedSessionVault(vault_file, private_key.encode("ascii"))
+    except (ValueError, UnicodeError):
+        return {"status": "AUTH_REQUIRED", "content_key": article.content_key}
+    with PlaywrightBrowser(headless=True, session_vault=vault,
                            save_profile_on_close=False) as browser:
         if not check_login(browser, site):
             return {"status": "AUTH_REQUIRED", "content_key": article.content_key}
