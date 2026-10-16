@@ -4,7 +4,7 @@ import pytest
 
 from minifish.ai_tower import (
     BoundedResponses, OfflineResponses, SafeAIActionPlanner,
-    build_delegate, run_ai_tower_trial,
+    build_delegate, run_ai_tower_trial, classify_ai_failure,
 )
 from minifish.models import Action, Observation
 
@@ -87,3 +87,12 @@ def test_existing_planner_parser_via_guard_and_real_browser(tmp_path):
     assert r["mock_model_calls"] == 4
     assert r["api_calls"] == 0
     assert r["live_ai_verified"] is False
+
+
+def test_public_api_failure_diagnosis_is_allowlisted_and_secret_free():
+    assert classify_ai_failure("RateLimitError: insufficient_quota") == "API_QUOTA_OR_BILLING"
+    assert classify_ai_failure("AuthenticationError: invalid_api_key") == "API_AUTHENTICATION"
+    assert classify_ai_failure("RateLimitError: Error code: 429") == "API_429_RATE_OR_QUOTA_UNKNOWN"
+    assert classify_ai_failure("JSONDecodeError") == "AI_OUTPUT_FORMAT_OR_SAFETY_GATE"
+    assert classify_ai_failure("some private secret-like content") == "UNCLASSIFIED_PRIVATE_ERROR"
+    assert classify_ai_failure(None) == "OUTPUT_NOT_VERIFIED"
