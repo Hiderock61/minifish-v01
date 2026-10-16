@@ -14,6 +14,11 @@ if ! pgrep -f "python bridge_worker.py" >/dev/null; then
   nohup python bridge_worker.py >/tmp/minifish-bridge.log 2>&1 &
 fi
 
+if [[ -n "${CODESPACE_NAME:-}" ]] && ! pgrep -f "uvicorn g1b_mock_app:app" >/dev/null; then
+  nohup bash start_g1b_mock.sh >/tmp/minifish-g1b-mock.log 2>&1 &
+fi
+
+echo "MiniFish owner login: PRIVATE 8002 / PRIVATE 6081 (mock + login handoff)"
 echo "MiniFish API:    /tmp/minifish-api.log"
 echo "MiniFish Bridge: /tmp/minifish-bridge.log"
 echo "Bridge ready. ChatGPT can enqueue jobs through GitHub Issues."

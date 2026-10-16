@@ -90,7 +90,7 @@ def run_job(issue: dict) -> dict:
         max_steps=25,
         max_duration_seconds=180,
         headless=True,
-        profile_path=PROFILE_PATH,
+        profile_path=None,  # Never persist live login cookies in legacy plaintext JSON
         capture_dir=str(run_dir / "captures"),
         log_path=str(run_dir / "run.json"),
     )

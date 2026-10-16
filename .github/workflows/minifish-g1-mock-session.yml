@@ -1,0 +1,26 @@
+name: MiniFish G1 encrypted mock session acceptance
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  mock-session-e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install existing runtime + encryption dependency
+        run: |
+          python -m pip install -r requirements.txt
+          python -m playwright install --with-deps chromium
+      - name: Verify encrypted vault and local-only simulated login persistence
+        env:
+          MINIFISH_G1_E2E: '1'
+        run: |
+          PYTHONPATH=. python -m pytest -q tests/test_session_vault.py tests/test_session_g1_e2e.py

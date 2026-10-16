@@ -6,9 +6,12 @@ from threading import Lock
 from typing import Any, Literal
 import os
 import uuid
+import re
 
-from fastapi import BackgroundTasks, FastAPI, HTTPException
-from fastapi.responses import HTMLResponse
+from minifish.owner_runtime import diagnose as owner_diagnose, start_owner_desktop
+
+from fastapi import BackgroundTasks, FastAPI, HTTPException, Request
+from fastapi.responses import HTMLResponse, JSONResponse
 from pydantic import BaseModel, Field
 
 from minifish import Action, MiniFishRunner, OpenAIPlanner, ScriptedPlanner
@@ -111,6 +114,13 @@ CONTROL_HTML = r"""
   <div class="eyebrow">MINIFISH CLOUD v0.2</div>
   <h1>iPhone操縦席 🐟</h1>
   <p class="sub">DemoはAIなし。AgentはURL＋GOALを受け、クラウド側のChromiumをMiniFishが操作する。</p>
+  <section class="card" aria-label="クラウドワークスのログイン">
+    <b>🔑 クラウドワークスの本人ログイン</b>
+    <p class="muted">ここからMiniFishの本人専用ブラウザを開きます。パスワードをChatGPTに貼らないでください。</p>
+    <a id="ownerLoginLink" href="#" style="display:block;padding:14px;border-radius:12px;background:#87c3ff;color:#071025;font-weight:850;text-align:center;text-decoration:none">MiniFishでログインする</a>
+    <p id="ownerLoginNotice" class="muted">起動状態を自動で確認しています…</p>
+    <button id="ownerBoot" type="button" hidden style="background:#ffcf8c;color:#071025;width:100%">MiniFishの画面を起動する</button>
+  </section>
 
   <section class="card">
     <label for="mode">MODE</label>
@@ -155,6 +165,63 @@ CONTROL_HTML = r"""
   </section>
 </main>
 <script>
+const ownerLink = document.getElementById('ownerLoginLink');
+const ownerNote = document.getElementById('ownerLoginNotice');
+const ownerBoot = document.getElementById('ownerBoot');
+const codehost = location.hostname;
+const onCodespace = /^[a-z0-9-]+-8000\.app\.github\.dev$/.test(codehost);
+const ownerUrl = onCodespace ?
+  "https://" + codehost.replace(/-8000\.app\.github\.dev$/, "-8002.app.github.dev") + "/login-ready" : null;
+
+function ownerState(state) {
+  const status=state.status || "UNKNOWN";
+  const messages={
+    READY:"ログイン用の画面と表示装置が応答しています。Privateで開けることを確認してからログインします。",
+    OFFLINE:"まだ起動していません。下のボタンで起動できます。",
+    STARTING:"いま起動しています。しばらくお待ちください。",
+    PARTIAL_NEEDS_INSPECTION:"画面か操作装置の片方が応答しません。ログインせず工務店で修理します。",
+    CODESPACE_REQUIRED:"Codespacesのプライベート画面でのみ利用できます。",
+    SCRIPT_MISSING:"MiniFishの新しい部品が足りません。",
+    PRIVATE_DIRECTORY_UNSAFE:"保存先の安全設定を確認する必要があります。",
+    PRIVATE_LOG_UNSAFE:"起動記録の安全設定を確認する必要があります。",
+    BOOT_BLOCKED:"起動に失敗しました。再試行できますが、ログインはまだしないでください。",
+    DESKTOP_MISSING:"画面共有に必要な部品がありません。再構築の完了状態を調べます。",
+    NOVNC_MISSING:"画面共有の表示部品が見つかりません。",
+    DESKTOP_IN_USE:"専用画面の番号がほかの装置で使用されています。",
+    AUTH_FILE_UNSAFE:"画面の認証情報の保護設定に問題があります。安全のため停止します。"
+  };
+  ownerNote.textContent=messages[status]||"準備が確認できません。ログインはまだしないでください。";
+  if(ownerUrl && status==="READY") {
+    ownerLink.href=ownerUrl;
+    ownerLink.setAttribute("aria-disabled","false");
+  } else {
+    ownerLink.removeAttribute("href");
+    ownerLink.setAttribute("aria-disabled","true");
+  }
+  ownerBoot.hidden=!(ownerUrl && state.can_start === true);
+}
+async function ownerCheck() {
+  if(!ownerUrl){ownerState({status:"CODESPACE_REQUIRED"});return;}
+  try {
+    const response=await fetch("/api/owner/diagnose",{credentials:"same-origin",cache:"no-store"});
+    ownerState(response.ok ? await response.json() : {status:"BOOT_BLOCKED"});
+  } catch (_) {ownerState({status:"BOOT_BLOCKED"});}
+}
+ownerBoot.addEventListener("click",async () => {
+  ownerBoot.disabled=true;
+  ownerState({status:"STARTING",can_start:false});
+  try {
+    const response=await fetch("/api/owner/start",{
+      method:"POST",credentials:"same-origin",cache:"no-store",
+      headers:{"X-MiniFish-Setup":"OWNER_UI"}
+    });
+    if(!response.ok) ownerState({status:"BOOT_BLOCKED"});
+    else ownerState(await response.json());
+  } catch (_) {ownerState({status:"BOOT_BLOCKED"});}
+  ownerBoot.disabled=false;
+});
+ownerCheck();
+setInterval(ownerCheck,3000);
 const runButton = document.getElementById('runButton');
 const stopButton = document.getElementById('stopButton');
 const modeInput = document.getElementById('mode');
@@ -385,7 +452,7 @@ def run_worker(run_id: str, request: RunRequest) -> None:
         max_steps=25,
         max_duration_seconds=180,
         headless=True,
-        profile_path=PROFILE_PATH,
+        profile_path=None,  # Never persist live login cookies in legacy plaintext JSON
         capture_dir=str(run_dir / "captures"),
         log_path=str(run_dir / "run.json"),
         on_event=lambda state, _event: save_snapshot(
@@ -497,3 +564,29 @@ async def cancel_run(run_id: str) -> dict[str, Any]:
             data = {**data, "status": "CANCELLED", "result": "cancelled by user"}
             RUNS[run_id] = data
     return data
+
+
+def _private_owner_request(request: Request, *, state_change: bool = False) -> None:
+    """Codespaces authenticated PRIVATE 8000 origin, no public or cross-site calls."""
+    name = os.getenv("CODESPACE_NAME", "")
+    if not name or not re.fullmatch(r"[a-z0-9-]+",name):
+        raise HTTPException(403, "PRIVATE_CODESPACE_REQUIRED")
+    expected = f"{name}-8000.app.github.dev"
+    if request.headers.get("host") != expected:
+        raise HTTPException(403, "OWNER_PRIVATE_PORT_REQUIRED")
+    if state_change:
+        if (request.headers.get("origin") != "https://" + expected
+                or request.headers.get("x-minifish-setup") != "OWNER_UI"):
+            raise HTTPException(403, "OWNER_SAME_ORIGIN_REQUIRED")
+
+
+@app.get("/api/owner/diagnose")
+def owner_runtime_status(request: Request):
+    _private_owner_request(request)
+    return JSONResponse(owner_diagnose(), headers={"Cache-Control":"no-store"})
+
+
+@app.post("/api/owner/start")
+def owner_runtime_start(request: Request):
+    _private_owner_request(request, state_change=True)
+    return JSONResponse(start_owner_desktop(), headers={"Cache-Control":"no-store"})
