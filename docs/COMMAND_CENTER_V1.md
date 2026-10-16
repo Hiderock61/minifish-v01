@@ -55,3 +55,17 @@ Notion正本：[司令塔ブラウザ誕生](https://app.notion.com/p/3f3c10ec59
 5. Codespacesを削除すると内部RUN履歴が消えることがある。恒久実行記録にはGitHub Issue→Actions→結果返却経路を使う。
 
 **注意**：iPhoneの画面テストはコード/契約テストまで。Safari実機で本人操作確認したという主張はしない。製品の全操作経路に実機PASSが必要なら別に実機試験を追加する。
+
+## 🐟 BATCH v1｜公開3サイトを1指令で観測（AI APIなし）
+
+ChatGPTに「MiniFishで公開3サイトをまとめてREAD ONLY検査して」と指示する。司令塔は次のGitHub Issueを**1件だけ**起票する。
+
+- タイトルは完全一致 `[MINIFISH BATCH] PUBLIC 3`
+- Issueはリポジトリ所有者の `Hiderock61` が作成する必要がある。本文の指示やURLは使わない。
+- MiniFishが固定の `example` / `python` / `github` をこの順に、独立したChromiumコンテキストでそれぞれ1回だけ観測する。
+- 既存の `run_public_readonly` のSupervisorGateとURL／本文の検品を再利用する。1件でも異常・予期しない観測URL・データ欠損があれば全体FAIL。
+- GitHub Issueコメントへ `MINIFISH_BATCH_RESULT status=PASS|FAIL`、3件のPASS/FAILと個別run_id、Actions証拠URLを返す。
+- OpenAI API 0回、ログイン0、クリック0、外部書き込み0。GitHub Actionsの利用枠は別。
+- 自由巡回・リンク押下・ユーザーURL入力・他サイトへの誘導は不可。動作の安全境界は以前の固定3URLと同じ。
+
+試験・変更記録は対応GitHub PR/Issueで追跡する。これまでの単体READ v1とは**別の新しいBATCH指令**で、既存モードは変更しない。

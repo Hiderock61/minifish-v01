@@ -1,0 +1,72 @@
+name: MiniFish fixed public batch v1 (zero AI API)
+
+on:
+  issues:
+    types: [opened]
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: minifish-public-batch-${{ github.event.issue.number || github.run_id }}
+  cancel-in-progress: false
+
+jobs:
+  batch:
+    if: >-
+      github.event_name == 'issues' &&
+      github.event.action == 'opened' &&
+      github.event.issue.title == '[MINIFISH BATCH] PUBLIC 3' &&
+      github.event.issue.user.login == 'Hiderock61' &&
+      github.actor == 'Hiderock61'
+    runs-on: ubuntu-latest
+    timeout-minutes: 9
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install existing MiniFish browser runtime
+        run: |
+          python -m pip install -r requirements.txt
+          python -m playwright install --with-deps chromium
+      - name: Check fixed approved sites in isolated browser sessions
+        env:
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+        run: |
+          PYTHONPATH=. python -m minifish.readonly_batch --issue-number "$ISSUE_NUMBER"
+      - name: Reply with sanitized three-site report
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          p = Path("batch_public_report.json")
+          d = json.loads(p.read_text(encoding="utf-8")) if p.exists() else {}
+          status = "PASS" if d.get("status") == "PASS" else "FAIL"
+          lines = [
+              "MINIFISH_BATCH_RESULT status=" + status,
+              "sites_checked=" + str(d.get("sites_checked", 0)),
+          ]
+          valid_keys = ("example", "python", "github")
+          values = d.get("sites", [])
+          for key in valid_keys:
+              item = next((i for i in values if i.get("site") == key), {})
+              state = "PASS" if item.get("status") == "PASS" else "FAIL"
+              run_id = str(item.get("run_id", ""))[:80] if state == "PASS" else "-"
+              lines.append(key + ": " + state + " run_id=" + run_id)
+          lines.extend([
+              "openai_api_calls=0, paid_api_calls=0, external_writes=0",
+              "Boundaries: 3 hardcoded public URLs, no AI, login, cookies or clicks.",
+          ])
+          Path("public_batch_comment.md").write_text(
+              "\n".join(lines), encoding="utf-8",
+          )
+          PY
+          printf '\n[Actions evidence](https://github.com/%s/actions/runs/%s)\n' "$GITHUB_REPOSITORY" "$GITHUB_RUN_ID" >> public_batch_comment.md
+          gh api "repos/$GITHUB_REPOSITORY/issues/$ISSUE_NUMBER/comments" -f body="$(cat public_batch_comment.md)"
