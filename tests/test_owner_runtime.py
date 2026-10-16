@@ -63,6 +63,8 @@ def test_start_invoked_once_and_secret_logs_private(monkeypatch,tmp_path):
     monkeypatch.setattr(owner_runtime,"_SCRIPT",script)
     monkeypatch.setattr(owner_runtime,"_app_ready",lambda:False)
     monkeypatch.setattr(owner_runtime,"_tcp_ready",lambda port:False)
+    monkeypatch.setattr(owner_runtime,"_desktop_dependencies_present",lambda:True)
+    monkeypatch.setattr(owner_runtime,"_BOOT_REQUESTED_AT",0.0)
     launches=[]
     def fake_popen(args,**kwargs):
         launches.append((args,kwargs))
@@ -86,3 +88,86 @@ def test_controller_visible_state_and_no_cli_instructions():
     assert "setInterval(ownerCheck,3000)" in html
     assert "git fetch" not in html
     assert "Rebuild Container" not in html
+
+
+
+def test_no_duplicate_start_during_boot(monkeypatch,tmp_path):
+    monkeypatch.setenv("CODESPACE_NAME","sample")
+    monkeypatch.setenv("HOME",str(tmp_path))
+    path=tmp_path/"mock.sh"
+    path.write_text("#!/bin/bash\n")
+    monkeypatch.setattr(owner_runtime,"_SCRIPT",path)
+    monkeypatch.setattr(owner_runtime,"_app_ready",lambda:False)
+    monkeypatch.setattr(owner_runtime,"_tcp_ready",lambda port:False)
+    monkeypatch.setattr(owner_runtime,"_desktop_dependencies_present",lambda:True)
+    monkeypatch.setattr(owner_runtime,"_BOOT_REQUESTED_AT",0.0)
+    runs=[]
+    monkeypatch.setattr(owner_runtime.subprocess,"Popen",
+                        lambda *a,**k:runs.append(1))
+    assert owner_runtime.start_owner_desktop()["status"]=="STARTING"
+    assert owner_runtime.start_owner_desktop()["status"]=="STARTING"
+    assert len(runs)==1
+
+
+def test_known_failure_codes_are_fixed_and_secret_free(monkeypatch,tmp_path):
+    monkeypatch.setenv("HOME",str(tmp_path))
+    d=tmp_path/".local/share/minifish"
+    d.mkdir(parents=True,mode=0o700)
+    log=d/"owner-desktop-boot.log"
+    log.write_text("secret: dont-share-me\nG1B_BLOCKED_NOVNC_PROXY_MISSING\n")
+    log.chmod(0o600)
+    assert owner_runtime._known_failure()=="NOVNC_MISSING"
+    assert "dont-share-me" not in owner_runtime._known_failure()
+    log.chmod(0o644)
+    assert owner_runtime._known_failure()=="PRIVATE_LOG_UNSAFE"
+
+
+def test_reattempt_is_allowed_only_after_boot_grace(monkeypatch,tmp_path):
+    monkeypatch.setenv("CODESPACE_NAME","sample")
+    script=tmp_path/"launch.sh"
+    script.write_text("#!/bin/bash\n")
+    monkeypatch.setattr(owner_runtime,"_SCRIPT",script)
+    monkeypatch.setattr(owner_runtime,"_app_ready",lambda:False)
+    monkeypatch.setattr(owner_runtime,"_tcp_ready",lambda port:False)
+    now=owner_runtime.time.monotonic()
+    monkeypatch.setattr(owner_runtime,"_BOOT_REQUESTED_AT",now)
+    assert owner_runtime.diagnose()=={"status":"STARTING","can_start":False}
+    monkeypatch.setattr(owner_runtime,"_BOOT_REQUESTED_AT",now-60)
+    monkeypatch.setattr(owner_runtime,"_known_failure",lambda:"NOVNC_MISSING")
+    assert owner_runtime.diagnose()=={"status":"NOVNC_MISSING","can_start":True}
+
+
+def test_old_portal_is_not_accepted_as_real_login(monkeypatch):
+    from urllib.request import Request
+    class FakeResponse:
+        status=200
+        headers={"content-type":"text/html"}
+        def __enter__(self):return self
+        def __exit__(self,*args):return None
+        def read(self,n):return b"<h1>MOCK_LOGIN_ONLY</h1>"
+    seen=[]
+    def fake_open(req,timeout):
+        assert isinstance(req,Request)
+        seen.append((req.full_url,req.get_header("Host")))
+        return FakeResponse()
+    monkeypatch.setenv("CODESPACE_NAME","sample")
+    monkeypatch.setattr(owner_runtime,"urlopen",fake_open)
+    assert not owner_runtime._app_ready()
+    assert seen==[("http://127.0.0.1:8002/login-ready",
+                    "sample-8002.app.github.dev")]
+
+
+def test_missing_desktop_tool_fails_closed_no_process(monkeypatch,tmp_path):
+    monkeypatch.setenv("CODESPACE_NAME","sample")
+    script=tmp_path/"launch.sh"
+    script.write_text("#!/bin/bash\n")
+    monkeypatch.setattr(owner_runtime,"_SCRIPT",script)
+    monkeypatch.setattr(owner_runtime,"_app_ready",lambda:False)
+    monkeypatch.setattr(owner_runtime,"_tcp_ready",lambda port:False)
+    monkeypatch.setattr(owner_runtime,"_BOOT_REQUESTED_AT",0.0)
+    monkeypatch.setattr(owner_runtime,"_desktop_dependencies_present",lambda:False)
+    monkeypatch.setattr(owner_runtime.subprocess,"Popen",
+                        lambda *a,**k:pytest.fail("should not spawn"))
+    assert owner_runtime.start_owner_desktop()=={
+        "status":"DESKTOP_MISSING","can_start":False,
+    }
