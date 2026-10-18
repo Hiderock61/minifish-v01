@@ -75,6 +75,10 @@ def _private_log_path() -> Path:
     return Path.home() / ".local/share/minifish/owner-desktop-boot.log"
 
 
+def _legacy_log_path() -> Path:
+    return Path("/tmp/minifish-g1b-mock.log")
+
+
 def _known_failure() -> str:
     """Read fixed error markers from both safe startup records, never raw text.
 
@@ -83,7 +87,7 @@ def _known_failure() -> str:
     these caused a false generic 'BOOT_BLOCKED' instead of an actionable
     diagnosis. Legacy /tmp is read-only here and must be owned by us.
     """
-    paths = (_private_log_path(), Path("/tmp/minifish-g1b-mock.log"))
+    paths = (_private_log_path(), _legacy_log_path())
     detected: list[tuple[float, str]] = []
     unsafe_private = False
     for path in paths:
