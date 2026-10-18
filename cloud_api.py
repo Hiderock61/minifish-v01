@@ -188,15 +188,27 @@ function ownerState(state) {
     DESKTOP_MISSING:"画面共有に必要な部品がありません。再構築の完了状態を調べます。",
     NOVNC_MISSING:"画面共有の表示部品が見つかりません。",
     DESKTOP_IN_USE:"専用画面の番号がほかの装置で使用されています。",
-    AUTH_FILE_UNSAFE:"画面の認証情報の保護設定に問題があります。安全のため停止します。"
+    AUTH_FILE_UNSAFE:"画面の認証情報の保護設定に問題があります。安全のため停止します。",
+    AUTH_SETUP_FAILED:"画面の認証設定が完了しませんでした。",
+    DESKTOP_START_FAILED:"ブラウザ用の画面を起動できませんでした。",
+    NOVNC_START_FAILED:"画面共有ソフトの起動に失敗しました。",
+    LOCAL_SCREEN_UNAVAILABLE:"画面共有の内部接続がまだできていません。",
+    LOGIN_CONTROLLER_FAILED:"ログイン操作装置を起動できませんでした。",
+    PRIVATE_OWNER_ACCESS_REJECTED:"この操縦席の本人確認に失敗しました。まだログインしないでください。",
+    PRIVATE_OWNER_SERVER_ERROR:"操縦席の自己診断が内部エラーで停止しました。ログインしないでください。",
+    PRIVATE_OWNER_CONNECTION_ERROR:"操縦席と自己診断装置が通信できません。ログインしないでください。"
   };
   ownerNote.textContent=messages[status]||"準備が確認できません。ログインはまだしないでください。";
   if(ownerUrl && status==="READY") {
     ownerLink.href=ownerUrl;
     ownerLink.setAttribute("aria-disabled","false");
+    ownerLink.style.opacity="1";
+    ownerLink.style.pointerEvents="auto";
   } else {
     ownerLink.removeAttribute("href");
     ownerLink.setAttribute("aria-disabled","true");
+    ownerLink.style.opacity="0.42";
+    ownerLink.style.pointerEvents="none";
   }
   ownerBoot.hidden=!(ownerUrl && state.can_start === true);
 }
@@ -204,8 +216,10 @@ async function ownerCheck() {
   if(!ownerUrl){ownerState({status:"CODESPACE_REQUIRED"});return;}
   try {
     const response=await fetch("/api/owner/diagnose",{credentials:"same-origin",cache:"no-store"});
-    ownerState(response.ok ? await response.json() : {status:"BOOT_BLOCKED"});
-  } catch (_) {ownerState({status:"BOOT_BLOCKED"});}
+    if(response.ok) ownerState(await response.json());
+    else if(response.status===403) ownerState({status:"PRIVATE_OWNER_ACCESS_REJECTED"});
+    else ownerState({status:"PRIVATE_OWNER_SERVER_ERROR"});
+  } catch (_) {ownerState({status:"PRIVATE_OWNER_CONNECTION_ERROR"});}
 }
 ownerBoot.addEventListener("click",async () => {
   ownerBoot.disabled=true;
@@ -215,9 +229,11 @@ ownerBoot.addEventListener("click",async () => {
       method:"POST",credentials:"same-origin",cache:"no-store",
       headers:{"X-MiniFish-Setup":"OWNER_UI"}
     });
-    if(!response.ok) ownerState({status:"BOOT_BLOCKED"});
+    if(!response.ok) ownerState({
+      status:response.status===403?"PRIVATE_OWNER_ACCESS_REJECTED":"PRIVATE_OWNER_SERVER_ERROR"
+    });
     else ownerState(await response.json());
-  } catch (_) {ownerState({status:"BOOT_BLOCKED"});}
+  } catch (_) {ownerState({status:"PRIVATE_OWNER_CONNECTION_ERROR"});}
   ownerBoot.disabled=false;
 });
 ownerCheck();
