@@ -76,23 +76,47 @@ def _private_log_path() -> Path:
 
 
 def _known_failure() -> str:
-    """Inspect only last 4 KB, mapping known codes to safe fixed labels."""
-    log = _private_log_path()
-    try:
-        if log.is_symlink():
-            return "PRIVATE_LOG_UNSAFE"
-        metadata = log.stat()
-        if not stat.S_ISREG(metadata.st_mode) or stat.S_IMODE(metadata.st_mode) != 0o600:
-            return "PRIVATE_LOG_UNSAFE"
-        with log.open("rb") as stream:
-            stream.seek(max(0, metadata.st_size - 4096))
-            body = stream.read(4096).decode("utf-8", errors="replace")
-        # Take the latest known code; no user-influenced text is returned.
-        events = [(body.rfind(raw), fixed) for raw, fixed in _START_ERRORS]
-        events = [e for e in events if e[0] >= 0]
-        return max(events)[1] if events else "BOOT_BLOCKED"
-    except (OSError, ValueError):
-        return "BOOT_BLOCKED"
+    """Read fixed error markers from both safe startup records, never raw text.
+
+    After container rebuild, postStartCommand used to write to /tmp, while
+    UI one-click starts write to the owner's private home. Missing one of
+    these caused a false generic 'BOOT_BLOCKED' instead of an actionable
+    diagnosis. Legacy /tmp is read-only here and must be owned by us.
+    """
+    paths = (_private_log_path(), Path("/tmp/minifish-g1b-mock.log"))
+    detected: list[tuple[float, str]] = []
+    unsafe_private = False
+    for path in paths:
+        try:
+            if path.is_symlink():
+                if path == paths[0]:
+                    unsafe_private = True
+                continue
+            meta = path.stat()
+            if not stat.S_ISREG(meta.st_mode) or meta.st_uid != os.geteuid():
+                continue
+            if path == paths[0] and stat.S_IMODE(meta.st_mode) != 0o600:
+                unsafe_private = True
+                continue
+            # Never allow stale records to stand in for a current failure.
+            if time.time() - meta.st_mtime > 7200 or meta.st_mtime > time.time() + 60:
+                continue
+            with path.open("rb") as stream:
+                stream.seek(max(0, meta.st_size - 4096))
+                body = stream.read(4096).decode("utf-8", errors="replace")
+            events = [(body.rfind(raw), fixed) for raw, fixed in _START_ERRORS]
+            events = [e for e in events if e[0] >= 0]
+            if events:
+                detected.append((meta.st_mtime, max(events)[1]))
+            elif "Traceback" in body or "Error" in body or "failed" in body.lower():
+                detected.append((meta.st_mtime, "BOOT_FAILED_UNCLASSIFIED"))
+        except (OSError, ValueError):
+            continue
+    if unsafe_private:
+        return "PRIVATE_LOG_UNSAFE"
+    if detected:
+        return max(detected)[1]
+    return "BOOT_CAUSE_NOT_OBSERVED"
 
 
 def _desktop_dependencies_present() -> bool:
