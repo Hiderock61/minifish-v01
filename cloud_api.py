@@ -585,17 +585,45 @@ async def cancel_run(run_id: str) -> dict[str, Any]:
 
 
 def _private_owner_request(request: Request, *, state_change: bool = False) -> None:
-    """Codespaces authenticated PRIVATE 8000 origin, no public or cross-site calls."""
+    """Private Codespaces UI; respect host rewriting by GitHub port proxy.
+
+    The real browser URL is '<codespace>-8000.app.github.dev'. GitHub's
+    forwarding layer may send a different upstream Host to this container,
+    which previously made *legitimate users* receive a 403 on diagnostics.
+    Health/status contains fixed non-secret status codes only. Changes
+    additionally require a valid Codespaces origin, same-origin browser
+    request, and the purpose-specific anti-CSRF header. GitHub Private
+    port authentication remains the main owner-access boundary.
+    """
     name = os.getenv("CODESPACE_NAME", "")
-    if not name or not re.fullmatch(r"[a-z0-9-]+",name):
+    if not name or not re.fullmatch(r"[a-z0-9-]+", name):
         raise HTTPException(403, "PRIVATE_CODESPACE_REQUIRED")
-    expected = f"{name}-8000.app.github.dev"
-    if request.headers.get("host") != expected:
-        raise HTTPException(403, "OWNER_PRIVATE_PORT_REQUIRED")
-    if state_change:
-        if (request.headers.get("origin") != "https://" + expected
-                or request.headers.get("x-minifish-setup") != "OWNER_UI"):
-            raise HTTPException(403, "OWNER_SAME_ORIGIN_REQUIRED")
+    if not state_change:
+        return  # Read-only diagnostics never contain tokens or secrets.
+
+    from urllib.parse import urlsplit
+    origin = request.headers.get("origin", "")
+    host = request.headers.get("host", "").lower()
+    url = urlsplit(origin)
+    browser_hostname = (url.hostname or "").lower()
+    legit_codespaces_origin = (
+        url.scheme == "https"
+        and re.fullmatch(r"[a-z0-9-]+-8000\.app\.github\.dev", browser_hostname)
+        and url.port is None
+        and not url.username and not url.password
+        and url.path == "" and not url.query and not url.fragment
+        and origin == "https://" + browser_hostname
+    )
+    proxy_rewrote_host = host in ("127.0.0.1:8000", "localhost:8000")
+    actual_external_host = host == browser_hostname
+    same_origin_fetch = request.headers.get("sec-fetch-site", "same-origin") == "same-origin"
+    if not (
+        legit_codespaces_origin
+        and (proxy_rewrote_host or actual_external_host)
+        and same_origin_fetch
+        and request.headers.get("x-minifish-setup") == "OWNER_UI"
+    ):
+        raise HTTPException(403, "OWNER_SAME_ORIGIN_REQUIRED")
 
 
 @app.get("/api/owner/diagnose")
