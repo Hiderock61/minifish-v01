@@ -238,3 +238,44 @@ def test_stale_startup_log_never_claimed_current(monkeypatch,tmp_path):
     os.utime(legacy,(old,old))
     monkeypatch.setattr(owner_runtime, "_legacy_log_path",lambda:legacy)
     assert owner_runtime._known_failure()=="BOOT_CAUSE_NOT_OBSERVED"
+
+
+
+def test_owner_diagnostics_allow_codespace_proxy_rewrite(monkeypatch):
+    """The screenshot's GET should work even if forwarding changes Host."""
+    monkeypatch.setenv("CODESPACE_NAME", "glorious-disco-example")
+    for host in (
+        "glorious-disco-example-8000.app.github.dev",
+        "localhost:8000",
+        "127.0.0.1:8000",
+    ):
+        cloud_api._private_owner_request(_req(host=host))
+
+
+def test_codespace_proxy_write_requires_same_origin_and_header(monkeypatch):
+    monkeypatch.setenv("CODESPACE_NAME", "glorious-disco-example")
+    url = "https://glorious-disco-example-8000.app.github.dev"
+    for host in ("localhost:8000", "127.0.0.1:8000",
+                 "glorious-disco-example-8000.app.github.dev"):
+        cloud_api._private_owner_request(
+            _req(host=host, origin=url, header="OWNER_UI"), state_change=True
+        )
+    with pytest.raises(HTTPException):
+        cloud_api._private_owner_request(
+            _req(host="localhost:8000", origin="https://evil.example",
+                 header="OWNER_UI"), state_change=True
+        )
+    with pytest.raises(HTTPException):
+        cloud_api._private_owner_request(
+            _req(host="evil.example", origin=url, header="OWNER_UI"),
+            state_change=True
+        )
+
+
+def test_codespace_diagnostics_requires_runtime(monkeypatch):
+    monkeypatch.delenv("CODESPACE_NAME", raising=False)
+    with pytest.raises(HTTPException) as error:
+        cloud_api._private_owner_request(
+            _req(host="127.0.0.1:8000")
+        )
+    assert error.value.status_code == 403
