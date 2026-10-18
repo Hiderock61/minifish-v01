@@ -112,6 +112,7 @@ CONTROL_HTML = r"""
 <body>
 <main>
   <div class="eyebrow">MINIFISH CLOUD v0.2</div>
+  <span hidden id="owner-proxy-fix" data-build="G1_PROXY_DIAG_FIX_20261018"></span>
   <h1>iPhone操縦席 🐟</h1>
   <p class="sub">DemoはAIなし。AgentはURL＋GOALを受け、クラウド側のChromiumをMiniFishが操作する。</p>
   <section class="card" aria-label="クラウドワークスのログイン">
