@@ -190,6 +190,8 @@ function ownerState(state) {
     DESKTOP_IN_USE:"専用画面の番号がほかの装置で使用されています。",
     AUTH_FILE_UNSAFE:"画面の認証情報の保護設定に問題があります。安全のため停止します。",
     AUTH_SETUP_FAILED:"画面の認証設定が完了しませんでした。",
+    BOOT_CAUSE_NOT_OBSERVED:"起動記録に故障理由が残っていません。安全のためログイン停止です。",
+    BOOT_FAILED_UNCLASSIFIED:"装置側でエラーが出ました。秘密を見せずに原因を調査します。",
     DESKTOP_START_FAILED:"ブラウザ用の画面を起動できませんでした。",
     NOVNC_START_FAILED:"画面共有ソフトの起動に失敗しました。",
     LOCAL_SCREEN_UNAVAILABLE:"画面共有の内部接続がまだできていません。",
