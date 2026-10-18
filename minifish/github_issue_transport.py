@@ -13,7 +13,6 @@ import re
 import shutil
 import subprocess
 from urllib.error import HTTPError, URLError
-from urllib.parse import quote
 from urllib.request import Request, urlopen
 
 MAX_RESPONSE_BYTES = 256_000
@@ -35,10 +34,10 @@ def _token() -> str | None:
 
 
 def transport_ready() -> str:
-    if shutil.which("gh") is not None:
-        return "GH_CLI"
     if _token():
         return "GITHUB_TOKEN"
+    if shutil.which("gh") is not None:
+        return "GH_CLI"
     return "BLOCKED_NO_GITHUB_AUTH"
 
 
