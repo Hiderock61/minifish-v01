@@ -43,6 +43,7 @@ def _correct_ui() -> bool:
                 and 'id="ownerBoot"' in body
                 and 'id="ownerLoginLink"' in body
                 and "/api/owner/diagnose" in body
+                and "G1_PROXY_DIAG_FIX_20261018" in body
             )
     except (OSError, URLError, HTTPError, TimeoutError):
         return False
