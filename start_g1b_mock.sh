@@ -9,10 +9,20 @@ if [[ -z "${CODESPACE_NAME:-}" && "${MINIFISH_G1B_LOCAL_TEST:-}" != "1" ]]; then
 fi
 
 umask 077
+# Fixed diagnostic stage codes only. Raw VNC errors remain in the PRIVATE boot log.
+startup_stage="INITIAL"
+report_boot_error() {
+  case "$startup_stage" in
+    INITIAL|PASSWORD|VNC|NOVNC|CONTROLLER) echo "G1B_START_FAILED_${startup_stage}" ;;
+    *) echo "G1B_START_FAILED_UNKNOWN" ;;
+  esac
+}
+trap 'report_boot_error' ERR
 private_dir="$HOME/.local/share/minifish/g1b-mock-only"
 mkdir -p "$private_dir"
 chmod 700 "$private_dir"
 
+startup_stage="PASSWORD"
 # Fail closed on symlink/unsafe file. Random password lives ONLY in Codespaces home.
 python - "$private_dir/vnc-password.txt" <<'PY'
 import os
@@ -68,11 +78,19 @@ if [[ -e /tmp/.X11-unix/X11 ]]; then
   echo "G1B_BLOCKED_DISPLAY_ALREADY_IN_USE"
   exit 1
 fi
+startup_stage="VNC"
+if ! command -v fluxbox >/dev/null; then
+  echo "G1B_BLOCKED_WINDOW_MANAGER_MISSING"
+  exit 1
+fi
+# Explicitly launch Fluxbox so a fresh desktop can stay alive on :11.
+# Default sessions may exit immediately on minimal Codespaces images.
 tigervncserver :11 -geometry 1280x768 -depth 24 -rfbport 5911 \
   -localhost -SecurityTypes VncAuth -passwd "$private_dir/vnc-passwd" \
-  -desktop MiniFish-G1b >/dev/null
+  -xstartup "$(command -v fluxbox)" -desktop MiniFish-G1b >/dev/null
 
 # Do not expose 8002 until the private mock desktop successfully started.
+startup_stage="NOVNC"
 nohup "${proxies[0]}" --listen 6081 --vnc localhost:5911 \
   >"$private_dir/novnc.log" 2>&1 &
 proxy_pid=$!
@@ -86,6 +104,23 @@ cleanup() {
 trap cleanup EXIT
 trap 'exit 0' TERM INT
 
+# The forwardPorts list is not evidence that a server listens. Verify both
+# local services before marking the controller ready.
+python - <<'PY'
+import socket, time, sys
+for port in (5911, 6081):
+    for _ in range(30):
+        try:
+            with socket.create_connection(("127.0.0.1", port), timeout=0.25):
+                break
+        except OSError:
+            time.sleep(0.2)
+    else:
+        print("G1B_START_FAILED_LOCAL_LISTENER", flush=True)
+        sys.exit(1)
+PY
+startup_stage="CONTROLLER"
+trap - ERR
 echo "G1B_PRIVATE_MOCK_READY=1 PORTS=8002,6081"
 uvicorn g1b_mock_app:app --host 0.0.0.0 --port 8002 \
   --no-access-log --log-level warning
