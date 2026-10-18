@@ -199,3 +199,42 @@ def test_owner_ui_reports_transport_and_denied_differently():
     assert 'PRIVATE_OWNER_CONNECTION_ERROR' in ui
     assert 'ownerLink.style.pointerEvents="none"' in ui
     assert "ログインはまだしないでください" in ui
+
+
+
+def test_diagnose_reads_legacy_poststart_log_without_exposing_contents(monkeypatch, tmp_path):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    legacy=tmp_path/"minifish-g1b-mock.log"
+    legacy.write_text("unrelated SECRET=session-abc\nG1B_START_FAILED_VNC\n")
+    legacy.chmod(0o644)
+    monkeypatch.setattr(owner_runtime, "_legacy_log_path", lambda:legacy)
+    assert owner_runtime._known_failure()=="DESKTOP_START_FAILED"
+    assert "session-abc" not in owner_runtime._known_failure()
+
+
+def test_diagnostic_prefers_newer_known_private_error(monkeypatch,tmp_path):
+    monkeypatch.setenv("HOME",str(tmp_path))
+    private=tmp_path/".local/share/minifish"
+    private.mkdir(parents=True)
+    latest=private/"owner-desktop-boot.log"
+    latest.write_text("G1B_BLOCKED_NOVNC_PROXY_MISSING\n")
+    latest.chmod(0o600)
+    legacy=tmp_path/"minifish-g1b-mock.log"
+    legacy.write_text("G1B_START_FAILED_VNC\n")
+    legacy.chmod(0o644)
+    older=latest.stat().st_mtime-20
+    os.utime(legacy, (older,older))
+    monkeypatch.setattr(owner_runtime, "_legacy_log_path",lambda:legacy)
+    assert owner_runtime._known_failure()=="NOVNC_MISSING"
+
+
+def test_stale_startup_log_never_claimed_current(monkeypatch,tmp_path):
+    monkeypatch.setenv("HOME",str(tmp_path))
+    legacy=tmp_path/"minifish-g1b-mock.log"
+    legacy.write_text("G1B_START_FAILED_VNC\n")
+    legacy.chmod(0o644)
+    import time
+    old=time.time()-9000
+    os.utime(legacy,(old,old))
+    monkeypatch.setattr(owner_runtime, "_legacy_log_path",lambda:legacy)
+    assert owner_runtime._known_failure()=="BOOT_CAUSE_NOT_OBSERVED"
