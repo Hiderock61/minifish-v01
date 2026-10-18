@@ -171,3 +171,31 @@ def test_missing_desktop_tool_fails_closed_no_process(monkeypatch,tmp_path):
     assert owner_runtime.start_owner_desktop()=={
         "status":"DESKTOP_MISSING","can_start":False,
     }
+
+
+
+@pytest.mark.parametrize("raw,expected", [
+    ("G1B_START_FAILED_VNC", "DESKTOP_START_FAILED"),
+    ("G1B_START_FAILED_LOCAL_LISTENER", "LOCAL_SCREEN_UNAVAILABLE"),
+    ("G1B_START_FAILED_PASSWORD", "AUTH_SETUP_FAILED"),
+    ("G1B_BLOCKED_WINDOW_MANAGER_MISSING", "DESKTOP_MISSING"),
+])
+def test_private_log_error_codes_no_credentials(monkeypatch,tmp_path,raw,expected):
+    monkeypatch.setenv("HOME",str(tmp_path))
+    private=tmp_path/".local/share/minifish"
+    private.mkdir(parents=True,exist_ok=True)
+    log=private/"owner-desktop-boot.log"
+    log.write_text("PRIVATE_CREDENTIAL=SHOULD_NOT_LEAK\n"+raw+"\n")
+    log.chmod(0o600)
+    assert owner_runtime._known_failure()==expected
+    assert "SHOULD_NOT_LEAK" not in owner_runtime._known_failure()
+
+
+def test_owner_ui_reports_transport_and_denied_differently():
+    ui=cloud_api.CONTROL_HTML
+    assert 'response.status===403' in ui
+    assert 'PRIVATE_OWNER_ACCESS_REJECTED' in ui
+    assert 'PRIVATE_OWNER_SERVER_ERROR' in ui
+    assert 'PRIVATE_OWNER_CONNECTION_ERROR' in ui
+    assert 'ownerLink.style.pointerEvents="none"' in ui
+    assert "ログインはまだしないでください" in ui
