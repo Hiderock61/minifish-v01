@@ -95,3 +95,34 @@ def test_paid_bridge_mode_never_launches_without_explicit_opt_in(monkeypatch):
         bridge_worker.run_job({"number":100,"body":json.dumps({
             "mode":"agent","goal":"Do not run","url":"https://example.com/"
         })})
+
+
+
+def test_owner_status_can_return_local_state_without_secret_or_browser(monkeypatch):
+    from minifish import owner_runtime
+    seen=[]
+    monkeypatch.setattr(owner_runtime, "diagnose",
+                        lambda: {"status": "OFFLINE", "can_start": True})
+    monkeypatch.setattr(bridge_worker, "MiniFishRunner",
+                        lambda *a,**k: pytest.fail("browser must not run"))
+    monkeypatch.setattr(bridge, "_request",
+                        lambda *a,**k: pytest.fail("GitHub API must not run"))
+    result=bridge_worker.run_job({
+        "number": 55,
+        "body": json.dumps({"mode":"owner_status", "goal":"状況報告"}),
+    })
+    assert result == {
+        "mode":"owner_status", "run_id":"issue_55",
+        "status":"OFFLINE", "can_start":True, "external_web_calls":0,
+        "website_writes":0, "credential_values_included":False,
+        "owner_login_verified":False,
+    }
+    assert "cookie" not in json.dumps(result).lower()
+    assert "token" not in json.dumps(result).lower()
+
+
+def test_owner_status_still_requires_nonempty_goal():
+    with pytest.raises(ValueError, match="goal is required"):
+        bridge_worker.run_job({
+            "number":56,"body":json.dumps({"mode":"owner_status","goal":""})
+        })
