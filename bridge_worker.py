@@ -40,6 +40,22 @@ def run_job(issue: dict) -> dict:
     issue_no = int(issue["number"])
     run_dir = RUN_ROOT / f"issue_{issue_no}"
 
+    if mode == "owner_status":
+        # Owner-authorized internal-only status. No website visit, cookie,
+        # screenshot, API key, request header or raw log leaves Codespaces.
+        from minifish.owner_runtime import diagnose
+        report = diagnose()
+        return {
+            "mode": "owner_status",
+            "run_id": f"issue_{issue_no}",
+            "status": report["status"],
+            "can_start": bool(report["can_start"]),
+            "external_web_calls": 0,
+            "website_writes": 0,
+            "credential_values_included": False,
+            "owner_login_verified": False,
+        }
+
     if mode == "read_only":
         # One-shot GitHub Actions route. No OpenAIPlanner, login, cookies or clicks.
         from minifish.readonly_probe import run_public_readonly
