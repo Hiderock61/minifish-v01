@@ -39,20 +39,27 @@ def test_status_reports_listening_ports_not_declared_ports(monkeypatch, tmp_path
     assert owner_runtime.diagnose()["status"]=="CODESPACE_REQUIRED"
 
 
-def test_private_start_needs_codespaces_same_origin(monkeypatch):
+def test_private_start_rejects_missing_wrong_or_cross_origin_nonce(monkeypatch):
     monkeypatch.setenv("CODESPACE_NAME","sample")
-    for req in (
-        _req(),
-        _req(origin="https://evil.example",header="OWNER_UI"),
-        _req(origin="https://sample-8000.app.github.dev"),
-        _req(origin="https://sample-8000.app.github.dev",header="OWNER_UI",host="other-8000.app.github.dev"),
-    ):
+    token = cloud_api._OWNER_START_NONCE
+    denied = (
+        (_req(), ""),
+        (_req(origin="https://evil.example"), token),
+        (_req(origin="https://sample-8000.app.github.dev"), "wrong"),
+    )
+    for req,proof in denied:
         with pytest.raises(HTTPException) as err:
-            cloud_api._private_owner_request(req,state_change=True)
+            cloud_api._private_owner_request(req,state_change=True,proof=proof)
         assert err.value.status_code==403
-    cloud_api._private_owner_request(_req(
-        origin="https://sample-8000.app.github.dev",header="OWNER_UI"
-    ),state_change=True)
+    # Browser-generated proof survives a proxy upstream Host rewrite.
+    cloud_api._private_owner_request(
+        _req(origin="https://sample-8000.app.github.dev",host="localhost:8000"),
+        state_change=True,proof=token,
+    )
+    # If the reverse proxy suppresses Origin, a valid random proof suffices.
+    cloud_api._private_owner_request(
+        _req(host="localhost:8000"), state_change=True,proof=token,
+    )
 
 
 def test_start_invoked_once_and_secret_logs_private(monkeypatch,tmp_path):
@@ -252,23 +259,31 @@ def test_owner_diagnostics_allow_codespace_proxy_rewrite(monkeypatch):
         cloud_api._private_owner_request(_req(host=host))
 
 
-def test_codespace_proxy_write_requires_same_origin_and_header(monkeypatch):
+def test_codespace_proxy_write_requires_nonce_and_not_cross_site(monkeypatch):
     monkeypatch.setenv("CODESPACE_NAME", "glorious-disco-example")
     url = "https://glorious-disco-example-8000.app.github.dev"
+    token = cloud_api._OWNER_START_NONCE
     for host in ("localhost:8000", "127.0.0.1:8000",
-                 "glorious-disco-example-8000.app.github.dev"):
+                 "glorious-disco-example-8000.app.github.dev",
+                 "upstream.github.internal:8000"):
         cloud_api._private_owner_request(
-            _req(host=host, origin=url, header="OWNER_UI"), state_change=True
+            _req(host=host, origin=url), state_change=True, proof=token
         )
     with pytest.raises(HTTPException):
         cloud_api._private_owner_request(
-            _req(host="localhost:8000", origin="https://evil.example",
-                 header="OWNER_UI"), state_change=True
+            _req(host="localhost:8000", origin="https://evil.example"),
+            state_change=True, proof=token
         )
     with pytest.raises(HTTPException):
         cloud_api._private_owner_request(
-            _req(host="evil.example", origin=url, header="OWNER_UI"),
-            state_change=True
+            _req(host="localhost:8000", origin=url),
+            state_change=True, proof="wrong"
+        )
+    crosssite = _req(host="localhost:8000",origin=url)
+    crosssite.scope["headers"] += [(b"sec-fetch-site",b"cross-site")]
+    with pytest.raises(HTTPException):
+        cloud_api._private_owner_request(
+            crosssite,state_change=True,proof=token
         )
 
 
@@ -279,3 +294,42 @@ def test_codespace_diagnostics_requires_runtime(monkeypatch):
             _req(host="127.0.0.1:8000")
         )
     assert error.value.status_code == 403
+
+
+def test_owner_start_nonce_exchanged_only_over_private_status_api(monkeypatch):
+    from fastapi.testclient import TestClient
+    monkeypatch.setenv("CODESPACE_NAME","sample")
+    monkeypatch.setattr(cloud_api,"owner_diagnose",
+                        lambda:{"status":"OFFLINE","can_start":True})
+    starts=[]
+    monkeypatch.setattr(cloud_api,"start_owner_desktop",
+                        lambda:starts.append(1) or {"status":"STARTING","can_start":False})
+    client=TestClient(cloud_api.app,base_url="https://sample-8000.app.github.dev")
+    result=client.get("/api/owner/diagnose")
+    assert result.status_code == 200
+    token=result.json()["start_nonce"]
+    assert isinstance(token,str) and len(token)>=40
+    assert token not in cloud_api.CONTROL_HTML
+    invalid=client.post("/api/owner/start",json={"nonce":"wrong"})
+    assert invalid.status_code==422 or invalid.status_code==403
+    assert starts==[]
+    failed=client.post("/api/owner/start",json={"nonce":token},
+                       headers={"origin":"https://evil.example"})
+    assert failed.status_code==403
+    assert starts==[]
+    # Rewritten Host cannot veto a request that proves private-page ownership.
+    success=client.post("/api/owner/start",json={"nonce":token},
+                        headers={"host":"localhost:8000",
+                                 "origin":"https://sample-8000.app.github.dev",
+                                 "sec-fetch-site":"same-origin"})
+    assert success.status_code==200
+    assert success.json()["status"]=="STARTING"
+    assert starts==[1]
+
+
+def test_owner_start_nonce_ui_uses_json_body_without_browser_password():
+    ui=cloud_api.CONTROL_HTML
+    assert "JSON.stringify({nonce:ownerStartNonce})" in ui
+    assert 'headers:{"Content-Type":"application/json"}' in ui
+    assert "G1_OWNER_START_NONCE_20261021" in ui
+    assert "_OWNER_START_NONCE" not in ui
