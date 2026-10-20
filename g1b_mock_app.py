@@ -251,8 +251,6 @@ def require_same_origin(request: Request, *, proof: str = "") -> None:
         if re.fullmatch(r"[a-z0-9-]+", name) else ""
     )
     local_origin = f"http://{host}" if host in ("127.0.0.1:8002", "localhost:8002") else ""
-    if request.headers.get("x-minifish-mock-action") != "G1B":
-        raise HTTPException(403, "G1B_ACTION_HEADER_REQUIRED")
     if request.headers.get("sec-fetch-site", "") not in ("", "same-origin"):
         raise HTTPException(403, "G1B_CROSS_SITE_REJECTED")
     if proof:
@@ -268,6 +266,10 @@ def require_same_origin(request: Request, *, proof: str = "") -> None:
         ):
             raise HTTPException(403, "OWNER_CROSS_ORIGIN_REJECTED")
         return
+    # The G1B custom header is for MOCK controls. PRIVATE owner actions use
+    # their random JSON nonce, not a header GitHub's proxy might strip.
+    if request.headers.get("x-minifish-mock-action") != "G1B":
+        raise HTTPException(403, "G1B_ACTION_HEADER_REQUIRED")
     if not origin or origin not in (codespace_origin, local_origin):
         raise HTTPException(403, "G1B_SAME_ORIGIN_REQUIRED")
 
@@ -381,7 +383,7 @@ def _private_password_reply():
 
 REAL_LOGIN_HTML = r"""<!doctype html><html lang="ja"><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<meta name="referrer" content="no-referrer"><meta name="minifish-login-build" content="G1_OWNER_8002_ACTION_PROOF_20261021"><title>🐟 MiniFish｜クラウドワークスのログイン</title>
+<meta name="referrer" content="no-referrer"><meta name="minifish-login-build" content="G1_OWNER_8002_LIVE_PROBE_20261021"><title>🐟 MiniFish｜クラウドワークスのログイン</title>
 <style>
 body{margin:0;background:#122032;color:#f6faff;font:16px system-ui,sans-serif}
 main{max-width:600px;margin:auto;padding:22px 16px}
@@ -396,7 +398,7 @@ button:disabled{opacity:.5}#status{padding:14px;border-radius:12px;background:#2
 <p>MiniFish専用ブラウザを開いて、いつもの方法で本人がログインします。
 ChatGPTへパスワードを貼る必要はありません。</p>
 <div id="status">接続状態を確認しています…</div>
-<p class="note" id="actionResult" aria-live="polite">ボタン操作はまだ行っていません。</p>
+<p class="note" id="actionResult" aria-live="polite">本人操作の前に、実際の通信経路を自動検査しています。</p>
 <button id="open">① MiniFishでログイン画面を開く</button>
 <button id="password">② 専用ブラウザの画面パスワードを表示</button>
 <p id="passNote" class="note">画面共有のためのパスワードです。クラウドワークスのパスワードではありません。</p>
@@ -418,7 +420,44 @@ else if(local) desktop.href="http://"+host+":6081/vnc.html";
 else {desktop.removeAttribute("href");desktop.textContent="プライベート画面が見つかりません";}
 const actionResult=document.getElementById("actionResult");
 let ownerActionNonce="";
-const headers={"X-MiniFish-Mock-Action":"G1B","Content-Type":"application/json"};
+let ownerProbeState="UNKNOWN";
+let ownerProbedNonce="";
+const headers={"Content-Type":"application/json"};
+async function probeOwnerAction(){
+ if(!ownerActionNonce)return;
+ ownerProbeState="CHECKING";
+ const nonce=ownerActionNonce;
+ try{
+  // This reaches the same PRIVATE POST guard as real login but does not
+  // launch Chromium, touch credentials, or change any server-side state.
+  const response=await fetch("/g1/owner/probe",{
+   method:"POST",headers,credentials:"same-origin",cache:"no-store",
+   body:JSON.stringify({nonce})
+  });
+  if(nonce!==ownerActionNonce)return;
+  if(!response.ok){
+   let code="UPSTREAM_OR_UNKNOWN_"+response.status;
+   const type=response.headers.get("content-type")||"";
+   if(type.includes("application/json")){
+    try{
+     const body=await response.json();
+     if(typeof body.detail==="string" && /^[A-Z0-9_]{4,80}$/.test(body.detail))
+      code=body.detail;
+    }catch(e){}
+   }
+   ownerProbeState="FAILED";
+   actionResult.textContent="自動通信検査で停止："+code+"。ログインはまだ開始できません。";
+  }else{
+   ownerProbeState="PASS";
+   actionResult.textContent="自動通信検査OK。ログイン画面の起動命令を受け付ける準備ができました。";
+  }
+ }catch(e){
+  if(nonce!==ownerActionNonce)return;
+  ownerProbeState="FAILED";
+  actionResult.textContent="自動通信検査で停止：PROBE_CONNECTION_FAILED";
+ }
+ await refresh();
+}
 async function refresh(){
  try{
   const response=await fetch("/g1/owner/status",{cache:"no-store",credentials:"same-origin"});
@@ -433,11 +472,17 @@ async function refresh(){
   }
   const d=await response.json();
   ownerActionNonce=typeof d.action_nonce==="string"?d.action_nonce:"";
+  if(ownerActionNonce && ownerActionNonce!==ownerProbedNonce){
+   ownerProbedNonce=ownerActionNonce;
+   ownerProbeState="CHECKING";
+   void probeOwnerAction();
+  }
   document.getElementById("status").textContent="現在地："+d.status;
-  document.getElementById("open").disabled=d.busy||!ownerActionNonce;
-  document.getElementById("reopen").disabled=d.busy||!ownerActionNonce;
-  document.getElementById("finish").disabled=!d.busy||!ownerActionNonce;
-  document.getElementById("stop").disabled=!d.busy||!ownerActionNonce;
+  const verified=ownerProbeState==="PASS";
+  document.getElementById("open").disabled=d.busy||!verified;
+  document.getElementById("reopen").disabled=d.busy||!verified;
+  document.getElementById("finish").disabled=!d.busy||!verified;
+  document.getElementById("stop").disabled=!d.busy||!verified;
  }catch(e){
   ownerActionNonce="";
   document.getElementById("status").textContent="画面に接続できません";
@@ -448,8 +493,8 @@ async function refresh(){
  }
 }
 async function run(name){
- if(!ownerActionNonce){
-  actionResult.textContent="操作停止：本人確認用の通信がまだ準備できていません。";
+ if(!ownerActionNonce||ownerProbeState!=="PASS"){
+  actionResult.textContent="操作停止：自動通信検査を通過していません。";
   return;
  }
  try{
@@ -518,6 +563,16 @@ def owner_login_status(request: Request):
         raise HTTPException(403, "OWNER_PRIVATE_CODESPACE_ONLY")
     return JSONResponse(
         {**real_handoff.status(), "action_nonce": _OWNER_ACTION_NONCE},
+        headers={"Cache-Control": "no-store", "Referrer-Policy": "no-referrer"},
+    )
+
+
+@app.post("/g1/owner/probe")
+def owner_action_probe(request: Request, proof: OwnerActionProof):
+    """Real-proxy, no-side-effect preflight for the browser's exact POST path."""
+    require_same_origin(request, proof=proof.nonce)
+    return JSONResponse(
+        {"status": "OWNER_ACTION_PROXY_READY"},
         headers={"Cache-Control": "no-store", "Referrer-Policy": "no-referrer"},
     )
 

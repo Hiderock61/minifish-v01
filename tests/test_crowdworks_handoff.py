@@ -184,7 +184,7 @@ def test_real_private_page_survives_proxy_host_rewrite(monkeypatch):
         })
         result = g1b_mock_app.live_login_page(request)
         assert result.status_code == 200
-        assert b"G1_OWNER_8002_ACTION_PROOF_20261021" in result.body
+        assert b"G1_OWNER_8002_LIVE_PROBE_20261021" in result.body
         assert result.headers["x-frame-options"] == "DENY"
     monkeypatch.delenv("CODESPACE_NAME")
     with pytest.raises(HTTPException):
@@ -309,3 +309,47 @@ def test_login_page_keeps_request_error_after_status_poll():
     assert '"/g1/owner/vnc-password"' in html
     assert "body:JSON.stringify({nonce:ownerActionNonce})" in html
     assert g1b_mock_app._OWNER_ACTION_NONCE not in html
+
+def test_private_proxy_preflight_matches_owner_start_without_launch(monkeypatch):
+    """Same JSON POST security path, from real browser Host, no web launch."""
+    from fastapi.testclient import TestClient
+    class SafeHandoff:
+        def __init__(self): self.launch_count=0
+        def status(self): return {"status":"LOGIN_NOT_STARTED","busy":False}
+        def launch(self,check_saved=False): self.launch_count+=1
+    fake=SafeHandoff()
+    monkeypatch.setenv("CODESPACE_NAME","glorious-disco-real")
+    monkeypatch.setattr(g1b_mock_app,"real_handoff",fake)
+    browser_origin="https://glorious-disco-real-8002.app.github.dev"
+    client=TestClient(g1b_mock_app.app,base_url=browser_origin)
+    token=client.get("/g1/owner/status").json()["action_nonce"]
+    for headers in (
+        {"host":"localhost:8002","origin":browser_origin,
+         "sec-fetch-site":"same-origin"},
+        {"host":"127.0.0.1:8002","origin":browser_origin},
+        {"host":"upstream.local:8002"},
+        {"host":"glorious-disco-real-8002.app.github.dev",
+         "origin":browser_origin},
+    ):
+        result=client.post("/g1/owner/probe",json={"nonce":token},headers=headers)
+        assert result.status_code==200
+        assert result.json()["status"]=="OWNER_ACTION_PROXY_READY"
+    assert fake.launch_count==0
+    assert client.get("/g1/owner/status").json()["status"]=="LOGIN_NOT_STARTED"
+    # A third-party origin, invalid proof, or cross-site request never passes.
+    assert client.post("/g1/owner/probe",json={"nonce":"wrong"},
+        headers={"origin":browser_origin}).status_code in (403,422)
+    assert client.post("/g1/owner/probe",json={"nonce":token},
+        headers={"origin":"https://evil.example"}).status_code==403
+    assert client.post("/g1/owner/probe",json={"nonce":token},
+        headers={"origin":browser_origin,"sec-fetch-site":"cross-site"}).status_code==403
+
+
+def test_browser_preflight_disables_real_buttons_before_proxy_pass():
+    html=g1b_mock_app.REAL_LOGIN_HTML
+    assert '"/g1/owner/probe"' in html
+    assert 'ownerProbeState==="PASS"' in html
+    assert 'document.getElementById("open").disabled=d.busy||!verified' in html
+    assert "自動通信検査で停止：" in html
+    assert "UPSTREAM_OR_UNKNOWN_" in html
+    assert "操作停止：自動通信検査を通過していません。" in html
