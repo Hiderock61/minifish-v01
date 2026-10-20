@@ -230,13 +230,23 @@ manager = MockManager()
 
 
 def require_same_origin(request: Request) -> None:
+    # GitHub PRIVATE port forwarding can replace the upstream Host with
+    # localhost. Verify the browser's real Origin against this Codespace,
+    # not against the forwarded Host. The custom header is not a secret.
     origin = request.headers.get("origin", "")
     host = request.headers.get("host", "")
-    local = host in ("127.0.0.1:8002", "localhost:8002")
-    codespace = bool(re.fullmatch(r"[a-z0-9-]+-8002\.app\.github\.dev", host))
-    expected = ("http://" if local else "https://") + host
+    name = os.getenv("CODESPACE_NAME", "")
+    codespace_origin = (
+        f"https://{name}-8002.app.github.dev"
+        if re.fullmatch(r"[a-z0-9-]+", name) else ""
+    )
+    local_origin = f"http://{host}" if host in ("127.0.0.1:8002", "localhost:8002") else ""
+    same_origin = bool(origin) and (
+        origin == codespace_origin or origin == local_origin
+    )
     if (request.headers.get("x-minifish-mock-action") != "G1B"
-            or not (local or codespace) or origin != expected):
+            or request.headers.get("sec-fetch-site", "") not in ("", "same-origin")
+            or not same_origin):
         raise HTTPException(403, "G1B_SAME_ORIGIN_REQUIRED")
 
 
@@ -341,7 +351,7 @@ def vnc_password(request: Request):
 
 REAL_LOGIN_HTML = r"""<!doctype html><html lang="ja"><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<meta name="referrer" content="no-referrer"><title>🐟 MiniFish｜クラウドワークスのログイン</title>
+<meta name="referrer" content="no-referrer"><meta name="minifish-login-build" content="G1_OWNER_8002_PROXY_FIX_20261021"><title>🐟 MiniFish｜クラウドワークスのログイン</title>
 <style>
 body{margin:0;background:#122032;color:#f6faff;font:16px system-ui,sans-serif}
 main{max-width:600px;margin:auto;padding:22px 16px}
@@ -409,14 +419,16 @@ refresh();setInterval(refresh,1800);
 
 @app.get("/login-ready", response_class=HTMLResponse)
 def live_login_page(request: Request):
-    # This is a private Codespaces browser page, not a public login gateway.
-    host = request.headers.get("host", "")
-    if not (os.getenv("CODESPACE_NAME")
-            and re.fullmatch(r"[a-z0-9-]+-8002\.app\.github\.dev", host)):
+    # Read-only page contains no credentials. GitHub authenticates the PRIVATE
+    # forwarded port. The forwarded Host may be localhost or an internal name,
+    # so do not reject its owner page based on a browser-facing Host match.
+    name = os.getenv("CODESPACE_NAME", "")
+    if not re.fullmatch(r"[a-z0-9-]+", name):
         raise HTTPException(403, "OWNER_PRIVATE_CODESPACE_ONLY")
     return HTMLResponse(
         REAL_LOGIN_HTML,
-        headers={"Cache-Control": "no-store", "Referrer-Policy": "no-referrer"},
+        headers={"Cache-Control": "no-store", "Referrer-Policy": "no-referrer",
+                 "X-Frame-Options": "DENY"},
     )
 
 

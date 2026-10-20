@@ -57,10 +57,10 @@ def _app_ready() -> bool:
     if not name:
         return False
     try:
-        request = Request(
-            "http://127.0.0.1:8002/login-ready",
-            headers={"Host": f"{name}-8002.app.github.dev"},
-        )
+        # Probe the actual localhost Host sent through the internal route.
+        # Spoofing the public Host previously gave READY while the forwarded
+        # browser request failed with OWNER_PRIVATE_CODESPACE_ONLY.
+        request = Request("http://127.0.0.1:8002/login-ready")
         with urlopen(request, timeout=0.85) as result:
             return (
                 result.status == 200

@@ -160,8 +160,7 @@ def test_old_portal_is_not_accepted_as_real_login(monkeypatch):
     monkeypatch.setenv("CODESPACE_NAME","sample")
     monkeypatch.setattr(owner_runtime,"urlopen",fake_open)
     assert not owner_runtime._app_ready()
-    assert seen==[("http://127.0.0.1:8002/login-ready",
-                    "sample-8002.app.github.dev")]
+    assert seen==[("http://127.0.0.1:8002/login-ready", None)]
 
 
 def test_missing_desktop_tool_fails_closed_no_process(monkeypatch,tmp_path):

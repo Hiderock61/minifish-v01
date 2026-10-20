@@ -100,3 +100,70 @@ def test_script_has_no_codespaces_or_git_remote_side_effects():
     assert "rm -rf" not in src
     assert "cloud_api:app" in src
     assert "start_iphone.sh" in src
+
+def test_login_updater_matches_only_exact_private_controller():
+    assert updater._is_minifish_login([
+        "uvicorn", "g1b_mock_app:app", "--port", "8002",
+    ])
+    assert not updater._is_minifish_login([
+        "uvicorn", "cloud_api:app", "--port", "8000",
+    ])
+    assert not updater._is_minifish_login([
+        "uvicorn", "g1b_mock_app:app", "--port", "8001",
+    ])
+
+
+def test_login_refresh_blocked_when_active_without_stopping(monkeypatch):
+    monkeypatch.setenv("CODESPACE_NAME", "sample")
+    monkeypatch.setattr(updater, "_check_private_ports", lambda: True)
+    monkeypatch.setattr(updater, "_login_controller_current", lambda: False)
+    monkeypatch.setattr(updater, "_known_login_processes", lambda: [321])
+    monkeypatch.setattr(updater, "_port_listening", lambda port=8000: port == 8002)
+    monkeypatch.setattr(updater, "_owner_login_idle", lambda: False)
+    monkeypatch.setattr(updater.os, "kill", lambda *args: pytest.fail("unexpected stop"))
+    assert updater.refresh_login_controller() == "BLOCKED_LOGIN_ACTIVE_OR_UNREADABLE"
+
+
+def test_login_refresh_stops_only_known_process_then_relaunches(monkeypatch):
+    monkeypatch.setenv("CODESPACE_NAME", "sample")
+    monkeypatch.setattr(updater, "_check_private_ports", lambda: True)
+    checks = iter([False, True])
+    monkeypatch.setattr(updater, "_login_controller_current", lambda: next(checks, True))
+    monkeypatch.setattr(updater, "_known_login_processes", lambda: [321])
+    monkeypatch.setattr(updater, "_owner_login_idle", lambda: True)
+    alive = {8002: True, 6081: True, 5911: True}
+    monkeypatch.setattr(updater, "_port_listening", lambda port=8000: alive.get(port, False))
+    stopped = []
+    def stop(pid, sig):
+        stopped.append((pid, sig))
+        for port in alive:
+            alive[port] = False
+    monkeypatch.setattr(updater.os, "kill", stop)
+    class DummyLog:
+        def __enter__(self): return self
+        def __exit__(self, *args): return None
+    monkeypatch.setattr(updater, "_private_log", lambda name: DummyLog())
+    launched = []
+    monkeypatch.setattr(updater.subprocess, "Popen", lambda *args, **kw: launched.append((args, kw)))
+    # Simulate the ready noVNC listener after controlled relaunch.
+    original = updater._login_controller_current
+    def ready():
+        value = original()
+        if value:
+            alive[6081] = True
+        return value
+    monkeypatch.setattr(updater, "_login_controller_current", ready)
+    assert updater.refresh_login_controller() == "READY_LOGIN_UPDATED"
+    assert stopped == [(321, signal.SIGTERM)]
+    assert launched[0][0] == ["bash", "start_g1b_mock.sh"]
+    assert launched[0][1]["start_new_session"] is True
+
+
+def test_login_refresh_leaves_unknown_port_untouched(monkeypatch):
+    monkeypatch.setenv("CODESPACE_NAME", "sample")
+    monkeypatch.setattr(updater, "_check_private_ports", lambda: True)
+    monkeypatch.setattr(updater, "_login_controller_current", lambda: False)
+    monkeypatch.setattr(updater, "_known_login_processes", lambda: [])
+    monkeypatch.setattr(updater, "_port_listening", lambda port=8000: port == 8002)
+    monkeypatch.setattr(updater.os, "kill", lambda *args: pytest.fail("unexpected kill"))
+    assert updater.refresh_login_controller() == "BLOCKED_UNKNOWN_LOGIN_SERVICE"

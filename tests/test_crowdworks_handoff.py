@@ -170,3 +170,51 @@ def test_private_login_page_does_not_expose_credentials(monkeypatch):
     assert e.value.status_code==403
     monkeypatch.setenv("CODESPACE_NAME","test-private")
     assert g1b_mock_app.live_login_page(request).status_code==200
+
+def test_real_private_page_survives_proxy_host_rewrite(monkeypatch):
+    from fastapi import HTTPException
+    from starlette.requests import Request
+    monkeypatch.setenv("CODESPACE_NAME", "glorious-disco-example")
+    for forwarded_host in ("127.0.0.1:8002", "localhost:8002",
+                           "codespace-internal:8002",
+                           "glorious-disco-example-8002.app.github.dev"):
+        request = Request({
+            "type": "http", "method": "GET", "scheme": "https",
+            "path": "/login-ready", "headers": [(b"host", forwarded_host.encode())],
+        })
+        result = g1b_mock_app.live_login_page(request)
+        assert result.status_code == 200
+        assert b"G1_OWNER_8002_PROXY_FIX_20261021" in result.body
+        assert result.headers["x-frame-options"] == "DENY"
+    monkeypatch.delenv("CODESPACE_NAME")
+    with pytest.raises(HTTPException):
+        g1b_mock_app.live_login_page(request)
+
+
+def test_real_owner_post_allows_codespace_origin_despite_forwarded_host(monkeypatch):
+    from fastapi import HTTPException
+    from starlette.requests import Request
+    monkeypatch.setenv("CODESPACE_NAME", "glorious-disco-example")
+    good = "https://glorious-disco-example-8002.app.github.dev"
+    def req(host, origin, fetch_site="same-origin", marker="G1B"):
+        return Request({
+            "type": "http", "method": "POST", "path": "/g1/owner/open",
+            "scheme": "https", "headers": [
+                (b"host", host.encode()), (b"origin", origin.encode()),
+                (b"x-minifish-mock-action", marker.encode()),
+                (b"sec-fetch-site", fetch_site.encode()),
+            ],
+        })
+    for host in ("localhost:8002", "127.0.0.1:8002",
+                 "codespace-internal:8002",
+                 "glorious-disco-example-8002.app.github.dev"):
+        g1b_mock_app.require_same_origin(req(host, good))
+    for request in (
+        req("localhost:8002", "https://evil.example"),
+        req("localhost:8002", good, "cross-site"),
+        req("localhost:8002", good, "same-origin", "WRONG"),
+        req("localhost:8002", "https://different-8002.app.github.dev"),
+    ):
+        with pytest.raises(HTTPException) as blocked:
+            g1b_mock_app.require_same_origin(request)
+        assert blocked.value.status_code == 403
