@@ -218,3 +218,94 @@ def test_real_owner_post_allows_codespace_origin_despite_forwarded_host(monkeypa
         with pytest.raises(HTTPException) as blocked:
             g1b_mock_app.require_same_origin(request)
         assert blocked.value.status_code == 403
+
+def test_real_owner_button_changes_state_via_private_proxy(monkeypatch):
+    """Actual HTTP route: GET status -> POST open -> status changes, no real website."""
+    from fastapi.testclient import TestClient
+    class FakeHandoff:
+        def __init__(self):
+            self.current="LOGIN_NOT_STARTED"
+            self.calls=[]
+        def status(self):
+            return {"status":self.current,"busy":False}
+        def launch(self,check_saved=False):
+            self.calls.append("open")
+            self.current="OPENING_PRIVATE_BROWSER"
+        def finish(self): self.calls.append("finish")
+        def cancel(self): self.calls.append("stop")
+    handoff=FakeHandoff()
+    monkeypatch.setenv("CODESPACE_NAME","glorious-disco-test")
+    monkeypatch.setattr(g1b_mock_app,"real_handoff",handoff)
+    origin="https://glorious-disco-test-8002.app.github.dev"
+    client=TestClient(g1b_mock_app.app,base_url=origin)
+    page=client.get("/login-ready")
+    assert page.status_code==200
+    assert b'id="actionResult"' in page.content
+    assert b"JSON.stringify({nonce:ownerActionNonce})" in page.content
+    state=client.get("/g1/owner/status")
+    assert state.status_code==200
+    assert state.json()["status"]=="LOGIN_NOT_STARTED"
+    nonce=state.json()["action_nonce"]
+    assert len(nonce)>=40 and nonce.encode() not in page.content
+    headers={"host":"127.0.0.1:8002","origin":origin,
+             "sec-fetch-site":"same-origin","x-minifish-mock-action":"G1B"}
+    invalid=client.post("/g1/owner/open",json={"nonce":"invalid"},headers=headers)
+    assert invalid.status_code in (403,422) and handoff.calls==[]
+    success=client.post("/g1/owner/open",json={"nonce":nonce},headers=headers)
+    assert success.status_code==200
+    assert success.json()["status"]=="OPENING_PRIVATE_BROWSER"
+    assert client.get("/g1/owner/status").json()["status"]=="OPENING_PRIVATE_BROWSER"
+    assert handoff.calls==["open"]
+
+
+def test_real_owner_nonce_rejects_cross_site_and_bad_content(monkeypatch):
+    from fastapi.testclient import TestClient
+    monkeypatch.setenv("CODESPACE_NAME","glorious-disco-test")
+    origin="https://glorious-disco-test-8002.app.github.dev"
+    client=TestClient(g1b_mock_app.app,base_url=origin)
+    nonce=client.get("/g1/owner/status").json()["action_nonce"]
+    base={"x-minifish-mock-action":"G1B","host":"localhost:8002"}
+    for hdr in (
+        {"origin":"https://evil.example","sec-fetch-site":"same-origin"},
+        {"origin":origin,"sec-fetch-site":"cross-site"},
+        {"origin":"https://something.example","sec-fetch-site":"same-origin"},
+    ):
+        r=client.post("/g1/owner/open",json={"nonce":nonce},headers={**base,**hdr})
+        assert r.status_code==403
+    assert client.post("/g1/owner/open",headers={**base,"origin":origin}).status_code in (403,422)
+    assert client.post("/g1/owner/open",data={"nonce":nonce},
+                       headers={**base,"origin":origin}).status_code in (403,422)
+    class Fake:
+        def status(self): return {"status":"LOGIN_NOT_STARTED","busy":False}
+        def launch(self,check_saved=False): pass
+    monkeypatch.setattr(g1b_mock_app,"real_handoff",Fake())
+    # Proxy with missing Origin: correctly issued nonce is sufficient.
+    assert client.post("/g1/owner/open",json={"nonce":nonce},headers=base).status_code==200
+
+
+def test_owner_vnc_password_view_uses_proof(monkeypatch,tmp_path):
+    from fastapi.testclient import TestClient
+    monkeypatch.setenv("CODESPACE_NAME","glorious-disco-test")
+    monkeypatch.setenv("HOME",str(tmp_path))
+    origin="https://glorious-disco-test-8002.app.github.dev"
+    client=TestClient(g1b_mock_app.app,base_url=origin)
+    nonce=client.get("/g1/owner/status").json()["action_nonce"]
+    passwd=g1b_mock_app.private_root()/"vnc-password.txt"
+    passwd.write_text("Sample12",encoding="ascii")
+    passwd.chmod(0o600)
+    headers={"x-minifish-mock-action":"G1B","origin":origin}
+    assert client.post("/g1/owner/vnc-password",json={"nonce":"invalid"},headers=headers).status_code in (403,422)
+    result=client.post("/g1/owner/vnc-password",json={"nonce":nonce},headers=headers)
+    assert result.status_code==200
+    assert result.json()["password"]=="Sample12"
+    assert "no-store" in result.headers["cache-control"]
+
+
+def test_login_page_keeps_request_error_after_status_poll():
+    html=g1b_mock_app.REAL_LOGIN_HTML
+    assert 'id="actionResult"' in html
+    assert "actionResult.textContent" in html
+    assert "操作は受理されませんでした（HTTP " in html
+    assert '"/g1/owner/vnc-password"' in html
+    assert "body:JSON.stringify({nonce:ownerActionNonce})" in html
+    assert g1b_mock_app._OWNER_ACTION_NONCE not in html

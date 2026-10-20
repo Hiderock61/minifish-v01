@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import os
 import re
+import secrets
 import stat
 import time
 from pathlib import Path
@@ -17,6 +18,7 @@ from urllib.parse import urlsplit
 from cryptography.fernet import Fernet
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
+from pydantic import BaseModel, Field
 from minifish.browser import PlaywrightBrowser
 from minifish.session_vault import EncryptedSessionVault
 from minifish.crowdworks_handoff import handoff as real_handoff
@@ -28,6 +30,11 @@ BASE = f"http://{HOST}:{PORT}"
 AUTH_COOKIE = "g1b_dummy"
 AUTH_VALUE = "NOT_A_REAL_ACCOUNT"
 MAX_SECONDS = 300
+_OWNER_ACTION_NONCE = secrets.token_urlsafe(32)
+
+
+class OwnerActionProof(BaseModel):
+    nonce: str = Field(min_length=40, max_length=128)
 
 HTML = r"""<!doctype html><html lang="ja"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
@@ -229,10 +236,13 @@ class MockManager:
 manager = MockManager()
 
 
-def require_same_origin(request: Request) -> None:
-    # GitHub PRIVATE port forwarding can replace the upstream Host with
-    # localhost. Verify the browser's real Origin against this Codespace,
-    # not against the forwarded Host. The custom header is not a secret.
+def require_same_origin(request: Request, *, proof: str = "") -> None:
+    """Use a private-page nonce for real owner actions across GitHub proxies.
+
+    The MOCK actions retain their original strict same-origin check. A real
+    owner POST must supply JSON, a random nonce from the private status GET,
+    and no contradictory cross-site headers. Nothing sensitive is logged.
+    """
     origin = request.headers.get("origin", "")
     host = request.headers.get("host", "")
     name = os.getenv("CODESPACE_NAME", "")
@@ -241,12 +251,24 @@ def require_same_origin(request: Request) -> None:
         if re.fullmatch(r"[a-z0-9-]+", name) else ""
     )
     local_origin = f"http://{host}" if host in ("127.0.0.1:8002", "localhost:8002") else ""
-    same_origin = bool(origin) and (
-        origin == codespace_origin or origin == local_origin
-    )
-    if (request.headers.get("x-minifish-mock-action") != "G1B"
-            or request.headers.get("sec-fetch-site", "") not in ("", "same-origin")
-            or not same_origin):
+    if request.headers.get("x-minifish-mock-action") != "G1B":
+        raise HTTPException(403, "G1B_ACTION_HEADER_REQUIRED")
+    if request.headers.get("sec-fetch-site", "") not in ("", "same-origin"):
+        raise HTTPException(403, "G1B_CROSS_SITE_REJECTED")
+    if proof:
+        if not re.fullmatch(r"[a-z0-9-]+", name):
+            raise HTTPException(403, "OWNER_PRIVATE_CODESPACE_ONLY")
+        if not secrets.compare_digest(proof, _OWNER_ACTION_NONCE):
+            raise HTTPException(403, "OWNER_ACTION_PROOF_REQUIRED")
+        if request.headers.get("content-type", "").split(";", 1)[0].strip().lower() != "application/json":
+            raise HTTPException(403, "OWNER_JSON_REQUIRED")
+        if origin and not (
+            re.fullmatch(r"https://[a-z0-9-]+-8002\.app\.github\.dev", origin)
+            or origin in ("http://127.0.0.1:8002", "http://localhost:8002")
+        ):
+            raise HTTPException(403, "OWNER_CROSS_ORIGIN_REJECTED")
+        return
+    if not origin or origin not in (codespace_origin, local_origin):
         raise HTTPException(403, "G1B_SAME_ORIGIN_REQUIRED")
 
 
@@ -324,11 +346,19 @@ def mock_click(request: Request):
 
 @app.post("/g1b/vnc-password")
 def vnc_password(request: Request):
-    """Show the random mock-only VNC password in the private control page.
-
-    Never log it, include it in a GitHub Issue or commit it to the repository.
-    """
+    """Existing mock-only password endpoint, unchanged for mock clients."""
     require_same_origin(request)
+    return _private_password_reply()
+
+
+@app.post("/g1/owner/vnc-password")
+def owner_vnc_password(request: Request, proof: OwnerActionProof):
+    """Owner's password display uses a private nonce, never a query string."""
+    require_same_origin(request, proof=proof.nonce)
+    return _private_password_reply()
+
+
+def _private_password_reply():
     if not os.getenv("CODESPACE_NAME"):
         raise HTTPException(403, "G1B_CODESPACE_REQUIRED")
     p = private_root() / "vnc-password.txt"
@@ -351,7 +381,7 @@ def vnc_password(request: Request):
 
 REAL_LOGIN_HTML = r"""<!doctype html><html lang="ja"><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<meta name="referrer" content="no-referrer"><meta name="minifish-login-build" content="G1_OWNER_8002_PROXY_FIX_20261021"><title>🐟 MiniFish｜クラウドワークスのログイン</title>
+<meta name="referrer" content="no-referrer"><meta name="minifish-login-build" content="G1_OWNER_8002_ACTION_PROOF_20261021"><title>🐟 MiniFish｜クラウドワークスのログイン</title>
 <style>
 body{margin:0;background:#122032;color:#f6faff;font:16px system-ui,sans-serif}
 main{max-width:600px;margin:auto;padding:22px 16px}
@@ -366,6 +396,7 @@ button:disabled{opacity:.5}#status{padding:14px;border-radius:12px;background:#2
 <p>MiniFish専用ブラウザを開いて、いつもの方法で本人がログインします。
 ChatGPTへパスワードを貼る必要はありません。</p>
 <div id="status">接続状態を確認しています…</div>
+<p class="note" id="actionResult" aria-live="polite">ボタン操作はまだ行っていません。</p>
 <button id="open">① MiniFishでログイン画面を開く</button>
 <button id="password">② 専用ブラウザの画面パスワードを表示</button>
 <p id="passNote" class="note">画面共有のためのパスワードです。クラウドワークスのパスワードではありません。</p>
@@ -385,33 +416,82 @@ const desktop=document.getElementById("desktop");
 if(codespace) desktop.href="https://"+host.replace(/-8002\.app\.github\.dev$/,"-6081.app.github.dev")+"/vnc.html";
 else if(local) desktop.href="http://"+host+":6081/vnc.html";
 else {desktop.removeAttribute("href");desktop.textContent="プライベート画面が見つかりません";}
-const headers={"X-MiniFish-Mock-Action":"G1B"};
+const actionResult=document.getElementById("actionResult");
+let ownerActionNonce="";
+const headers={"X-MiniFish-Mock-Action":"G1B","Content-Type":"application/json"};
 async function refresh(){
  try{
-  const d=await(await fetch("/g1/owner/status",{cache:"no-store",credentials:"same-origin"})).json();
+  const response=await fetch("/g1/owner/status",{cache:"no-store",credentials:"same-origin"});
+  if(!response.ok){
+   ownerActionNonce="";
+   document.getElementById("status").textContent="状態確認を拒否されました（HTTP "+response.status+"）";
+   document.getElementById("open").disabled=true;
+   document.getElementById("reopen").disabled=true;
+   document.getElementById("finish").disabled=true;
+   document.getElementById("stop").disabled=true;
+   return;
+  }
+  const d=await response.json();
+  ownerActionNonce=typeof d.action_nonce==="string"?d.action_nonce:"";
   document.getElementById("status").textContent="現在地："+d.status;
-  document.getElementById("open").disabled=d.busy;
-  document.getElementById("reopen").disabled=d.busy;
-  document.getElementById("finish").disabled=!d.busy;
-  document.getElementById("stop").disabled=!d.busy;
- }catch(e){document.getElementById("status").textContent="画面に接続できません";}
+  document.getElementById("open").disabled=d.busy||!ownerActionNonce;
+  document.getElementById("reopen").disabled=d.busy||!ownerActionNonce;
+  document.getElementById("finish").disabled=!d.busy||!ownerActionNonce;
+  document.getElementById("stop").disabled=!d.busy||!ownerActionNonce;
+ }catch(e){
+  ownerActionNonce="";
+  document.getElementById("status").textContent="画面に接続できません";
+  document.getElementById("open").disabled=true;
+  document.getElementById("reopen").disabled=true;
+  document.getElementById("finish").disabled=true;
+  document.getElementById("stop").disabled=true;
+ }
 }
 async function run(name){
- const res=await fetch("/g1/owner/"+name,{method:"POST",headers,
-   credentials:"same-origin",cache:"no-store"});
- if(!res.ok) document.getElementById("status").textContent="STOP："+res.status;
- await refresh();
+ if(!ownerActionNonce){
+  actionResult.textContent="操作停止：本人確認用の通信がまだ準備できていません。";
+  return;
+ }
+ try{
+  const res=await fetch("/g1/owner/"+name,{
+   method:"POST",headers,credentials:"same-origin",cache:"no-store",
+   body:JSON.stringify({nonce:ownerActionNonce})
+  });
+  if(!res.ok){
+   actionResult.textContent="操作は受理されませんでした（HTTP "+res.status+"）。連打せずに停止してください。";
+   await refresh();
+   return;
+  }
+  const d=await res.json();
+  actionResult.textContent="操作を受理しました："+(d.status||"STATE_PENDING");
+  await refresh();
+ }catch(e){
+  actionResult.textContent="操作の通信に失敗しました。連打せずに停止してください。";
+  await refresh();
+ }
 }
 for(const name of ["open","finish","reopen","stop"]){
  document.getElementById(name).onclick=()=>run(name);
 }
 document.getElementById("password").onclick=async()=>{
- const res=await fetch("/g1b/vnc-password",{method:"POST",headers,
-   credentials:"same-origin",cache:"no-store"});
- const val=await res.json();
- document.getElementById("passNote").textContent=res.ok?
- "MiniFishの画面用："+val.password+"（ほかには共有しない）":
- "画面の認証情報はまだ準備されていません";
+ if(!ownerActionNonce){
+  document.getElementById("passNote").textContent="本人確認用の通信がまだ準備できていません。";
+  return;
+ }
+ try{
+  const res=await fetch("/g1/owner/vnc-password",{
+   method:"POST",headers,credentials:"same-origin",cache:"no-store",
+   body:JSON.stringify({nonce:ownerActionNonce})
+  });
+  if(!res.ok){
+   document.getElementById("passNote").textContent="画面パスワードを表示できません（HTTP "+res.status+"）。";
+   return;
+  }
+  const val=await res.json();
+  document.getElementById("passNote").textContent="MiniFishの画面用："+val.password+"（ほかには共有しない）";
+ }catch(e){
+  document.getElementById("passNote").textContent="パスワード表示の通信に失敗しました。";
+ }
 };
 refresh();setInterval(refresh,1800);
 </script></main></body></html>"""
@@ -436,12 +516,15 @@ def live_login_page(request: Request):
 def owner_login_status(request: Request):
     if not os.getenv("CODESPACE_NAME"):
         raise HTTPException(403, "OWNER_PRIVATE_CODESPACE_ONLY")
-    return JSONResponse(real_handoff.status(), headers={"Cache-Control": "no-store"})
+    return JSONResponse(
+        {**real_handoff.status(), "action_nonce": _OWNER_ACTION_NONCE},
+        headers={"Cache-Control": "no-store", "Referrer-Policy": "no-referrer"},
+    )
 
 
 @app.post("/g1/owner/{command}")
-def owner_login_action(command: str, request: Request):
-    require_same_origin(request)
+def owner_login_action(command: str, request: Request, proof: OwnerActionProof):
+    require_same_origin(request, proof=proof.nonce)
     if command not in ("open", "finish", "reopen", "stop"):
         raise HTTPException(404, "UNKNOWN_OWNER_COMMAND")
     try:

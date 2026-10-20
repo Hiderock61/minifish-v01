@@ -167,3 +167,8 @@ def test_login_refresh_leaves_unknown_port_untouched(monkeypatch):
     monkeypatch.setattr(updater, "_port_listening", lambda port=8000: port == 8002)
     monkeypatch.setattr(updater.os, "kill", lambda *args: pytest.fail("unexpected kill"))
     assert updater.refresh_login_controller() == "BLOCKED_UNKNOWN_LOGIN_SERVICE"
+
+def test_login_refresh_requires_action_nonce_build():
+    src=(Path(__file__).resolve().parent.parent/"tools/refresh_codespace_ui.py").read_text()
+    assert "G1_OWNER_8002_ACTION_PROOF_20261021" in src
+    assert "G1_OWNER_8002_PROXY_FIX_20261021" not in src

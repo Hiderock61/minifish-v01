@@ -192,7 +192,7 @@ def _login_controller_current() -> bool:
             content = response.read(32768).decode("utf-8", errors="replace")
             return (
                 response.status == 200
-                and "G1_OWNER_8002_PROXY_FIX_20261021" in content
+                and "G1_OWNER_8002_ACTION_PROOF_20261021" in content
                 and "クラウドワークス" in content
             )
     except (OSError, HTTPError, URLError, TimeoutError):
