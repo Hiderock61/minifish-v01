@@ -7,6 +7,7 @@ from typing import Any, Literal
 import os
 import uuid
 import re
+import secrets
 
 from minifish.owner_runtime import diagnose as owner_diagnose, start_owner_desktop
 
@@ -17,6 +18,14 @@ from pydantic import BaseModel, Field
 from minifish import Action, MiniFishRunner, OpenAIPlanner, ScriptedPlanner
 
 app = FastAPI(title="MiniFish Cloud v0.2")
+
+# Process-local, private-portal-only nonce. Never placed in static HTML or logs.
+_OWNER_START_NONCE = secrets.token_urlsafe(32)
+
+
+class OwnerStartProof(BaseModel):
+    nonce: str = Field(min_length=40, max_length=128)
+
 
 RUNS: dict[str, dict[str, Any]] = {}
 CANCEL_FLAGS: dict[str, bool] = {}
@@ -112,7 +121,7 @@ CONTROL_HTML = r"""
 <body>
 <main>
   <div class="eyebrow">MINIFISH CLOUD v0.2</div>
-  <span hidden id="owner-proxy-fix" data-build="G1_PROXY_DIAG_FIX_20261018"></span>
+  <span hidden id="owner-proxy-fix" data-build="G1_OWNER_START_NONCE_20261021"></span>
   <h1>iPhone操縦席 🐟</h1>
   <p class="sub">DemoはAIなし。AgentはURL＋GOALを受け、クラウド側のChromiumをMiniFishが操作する。</p>
   <section class="card" aria-label="クラウドワークスのログイン">
@@ -215,22 +224,38 @@ function ownerState(state) {
   }
   ownerBoot.hidden=!(ownerUrl && state.can_start === true);
 }
+// The private port serves a fresh one-use-purpose start proof to its own
+// authenticated page. It is never shown in the UI or copied to GitHub.
+let ownerStartNonce = "";
 async function ownerCheck() {
   if(!ownerUrl){ownerState({status:"CODESPACE_REQUIRED"});return;}
   try {
     const response=await fetch("/api/owner/diagnose",{credentials:"same-origin",cache:"no-store"});
-    if(response.ok) ownerState(await response.json());
-    else if(response.status===403) ownerState({status:"PRIVATE_OWNER_ACCESS_REJECTED"});
-    else ownerState({status:"PRIVATE_OWNER_SERVER_ERROR"});
-  } catch (_) {ownerState({status:"PRIVATE_OWNER_CONNECTION_ERROR"});}
+    if(response.ok) {
+      const state=await response.json();
+      ownerStartNonce=typeof state.start_nonce==="string" ? state.start_nonce : "";
+      ownerState(state);
+    } else {
+      ownerStartNonce="";
+      ownerState({status:response.status===403?"PRIVATE_OWNER_ACCESS_REJECTED":"PRIVATE_OWNER_SERVER_ERROR"});
+    }
+  } catch (_) {
+    ownerStartNonce="";
+    ownerState({status:"PRIVATE_OWNER_CONNECTION_ERROR"});
+  }
 }
 ownerBoot.addEventListener("click",async () => {
+  if(!ownerStartNonce) {
+    ownerState({status:"PRIVATE_OWNER_ACCESS_REJECTED",can_start:false});
+    return;
+  }
   ownerBoot.disabled=true;
   ownerState({status:"STARTING",can_start:false});
   try {
     const response=await fetch("/api/owner/start",{
       method:"POST",credentials:"same-origin",cache:"no-store",
-      headers:{"X-MiniFish-Setup":"OWNER_UI"}
+      headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({nonce:ownerStartNonce})
     });
     if(!response.ok) ownerState({
       status:response.status===403?"PRIVATE_OWNER_ACCESS_REJECTED":"PRIVATE_OWNER_SERVER_ERROR"
@@ -585,55 +610,53 @@ async def cancel_run(run_id: str) -> dict[str, Any]:
     return data
 
 
-def _private_owner_request(request: Request, *, state_change: bool = False) -> None:
-    """Private Codespaces UI; respect host rewriting by GitHub port proxy.
+def _private_owner_request(
+    request: Request, *, state_change: bool = False, proof: str = ""
+) -> None:
+    """Codespaces PRIVATE port; CSRF nonce survives GitHub proxy Host rewrites.
 
-    The real browser URL is '<codespace>-8000.app.github.dev'. GitHub's
-    forwarding layer may send a different upstream Host to this container,
-    which previously made *legitimate users* receive a 403 on diagnostics.
-    Health/status contains fixed non-secret status codes only. Changes
-    additionally require a valid Codespaces origin, same-origin browser
-    request, and the purpose-specific anti-CSRF header. GitHub Private
-    port authentication remains the main owner-access boundary.
+    The read-only endpoint is reachable only through an authenticated
+    private Codespaces forward. The random process-local nonce is returned
+    to that SAME origin via JSON (never static HTML or a GitHub Issue).
+    Writing requires the nonce in an application/json POST. Unlike Host
+    / Origin equality, the nonce is not sensitive to proxy header rewrites.
+    If an Origin or Sec-Fetch-Site *is* supplied, reject any contradictory
+    cross-origin request. Browser CORS remains disabled.
     """
     name = os.getenv("CODESPACE_NAME", "")
     if not name or not re.fullmatch(r"[a-z0-9-]+", name):
         raise HTTPException(403, "PRIVATE_CODESPACE_REQUIRED")
     if not state_change:
-        return  # Read-only diagnostics never contain tokens or secrets.
-
-    from urllib.parse import urlsplit
+        return
+    if not secrets.compare_digest(proof, _OWNER_START_NONCE):
+        raise HTTPException(403, "OWNER_START_PROOF_REQUIRED")
     origin = request.headers.get("origin", "")
-    host = request.headers.get("host", "").lower()
-    url = urlsplit(origin)
-    browser_hostname = (url.hostname or "").lower()
-    legit_codespaces_origin = (
-        url.scheme == "https"
-        and re.fullmatch(r"[a-z0-9-]+-8000\.app\.github\.dev", browser_hostname)
-        and url.port is None
-        and not url.username and not url.password
-        and url.path == "" and not url.query and not url.fragment
-        and origin == "https://" + browser_hostname
-    )
-    proxy_rewrote_host = host in ("127.0.0.1:8000", "localhost:8000")
-    actual_external_host = host == browser_hostname
-    same_origin_fetch = request.headers.get("sec-fetch-site", "same-origin") == "same-origin"
-    if not (
-        legit_codespaces_origin
-        and (proxy_rewrote_host or actual_external_host)
-        and same_origin_fetch
-        and request.headers.get("x-minifish-setup") == "OWNER_UI"
-    ):
-        raise HTTPException(403, "OWNER_SAME_ORIGIN_REQUIRED")
-
+    fetch_site = request.headers.get("sec-fetch-site", "")
+    if fetch_site not in ("", "same-origin"):
+        raise HTTPException(403, "OWNER_CROSS_SITE_REJECTED")
+    if origin:
+        from urllib.parse import urlsplit
+        parsed = urlsplit(origin)
+        host = (parsed.hostname or "").lower()
+        if not (
+            parsed.scheme == "https"
+            and bool(re.fullmatch(r"[a-z0-9-]+-8000\.app\.github\.dev", host))
+            and parsed.port is None
+            and not parsed.username and not parsed.password
+            and origin == "https://" + host
+        ):
+            raise HTTPException(403, "OWNER_CROSS_ORIGIN_REJECTED")
 
 @app.get("/api/owner/diagnose")
 def owner_runtime_status(request: Request):
     _private_owner_request(request)
-    return JSONResponse(owner_diagnose(), headers={"Cache-Control":"no-store"})
+    return JSONResponse(
+        {**owner_diagnose(), "start_nonce": _OWNER_START_NONCE},
+        headers={"Cache-Control":"no-store", "Referrer-Policy":"no-referrer"},
+    )
 
 
 @app.post("/api/owner/start")
-def owner_runtime_start(request: Request):
-    _private_owner_request(request, state_change=True)
+def owner_runtime_start(request: Request, proof: OwnerStartProof):
+    _private_owner_request(request, state_change=True, proof=proof.nonce)
     return JSONResponse(start_owner_desktop(), headers={"Cache-Control":"no-store"})
