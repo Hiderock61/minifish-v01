@@ -7,6 +7,7 @@ existing old MiniFish port-8000 service and replace it with the updated one.
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -187,15 +188,26 @@ def _known_login_processes() -> list[int]:
 
 
 def _login_controller_current() -> bool:
+    """Require that loaded 8002 server bytecode matches updated on-disk source.
+
+    A static UI marker used to falsely report READY_LOGIN_ALREADY_CURRENT
+    after a backend-only repair. This process-start fingerprint rejects that.
+    """
     try:
+        expected = hashlib.sha256((ROOT / "g1b_mock_app.py").read_bytes()).hexdigest()
         with urlopen("http://127.0.0.1:8002/login-ready", timeout=0.8) as response:
             content = response.read(32768).decode("utf-8", errors="replace")
-            return (
-                response.status == 200
-                and "G1_OWNER_8002_LIVE_PROBE_20261021" in content
-                and "クラウドワークス" in content
-            )
-    except (OSError, HTTPError, URLError, TimeoutError):
+            if not (response.status == 200
+                    and "G1_OWNER_8002_NONCE_PROXY_20261021" in content
+                    and "クラウドワークス" in content):
+                return False
+        with urlopen("http://127.0.0.1:8002/g1/owner/build", timeout=0.8) as response:
+            if response.status != 200:
+                return False
+            build = json.loads(response.read(2048))
+            return build.get("source_sha256") == expected
+    except (OSError, HTTPError, URLError, TimeoutError, ValueError,
+            json.JSONDecodeError):
         return False
 
 

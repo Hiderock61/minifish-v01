@@ -184,7 +184,7 @@ def test_real_private_page_survives_proxy_host_rewrite(monkeypatch):
         })
         result = g1b_mock_app.live_login_page(request)
         assert result.status_code == 200
-        assert b"G1_OWNER_8002_LIVE_PROBE_20261021" in result.body
+        assert b"G1_OWNER_8002_NONCE_PROXY_20261021" in result.body
         assert result.headers["x-frame-options"] == "DENY"
     monkeypatch.delenv("CODESPACE_NAME")
     with pytest.raises(HTTPException):
@@ -386,3 +386,19 @@ def test_live_origin_rewrite_no_longer_blocks_private_nonce(monkeypatch):
             "origin":proxy_origin, "sec-fetch-site":"cross-site",
         })
         assert denied.status_code == 403
+
+
+def test_owner_build_fingerprint_is_fixed_at_server_import(monkeypatch):
+    """Never leak a token and never confuse the running code with updated disk."""
+    import hashlib
+    from pathlib import Path
+    from fastapi.testclient import TestClient
+    monkeypatch.setenv("CODESPACE_NAME","glorious-disco-fingerprint")
+    app=g1b_mock_app.app
+    response=TestClient(app).get("/g1/owner/build")
+    assert response.status_code==200
+    assert response.json() == {
+        "source_sha256":hashlib.sha256(Path(g1b_mock_app.__file__).read_bytes()).hexdigest()
+    }
+    assert "access-control-allow-origin" not in response.headers
+    assert "no-store" in response.headers["cache-control"]

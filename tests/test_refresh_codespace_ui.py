@@ -170,5 +170,32 @@ def test_login_refresh_leaves_unknown_port_untouched(monkeypatch):
 
 def test_login_refresh_requires_action_nonce_build():
     src=(Path(__file__).resolve().parent.parent/"tools/refresh_codespace_ui.py").read_text()
-    assert "G1_OWNER_8002_LIVE_PROBE_20261021" in src
+    assert "G1_OWNER_8002_NONCE_PROXY_20261021" in src
     assert "G1_OWNER_8002_PROXY_FIX_20261021" not in src
+
+
+def test_login_updater_fingerprint_detects_old_running_process(monkeypatch):
+    import json
+    current=updater.hashlib.sha256((updater.ROOT/"g1b_mock_app.py").read_bytes()).hexdigest()
+    class FakeReply:
+        status=200
+        def __init__(self,text): self.body=text.encode("utf-8")
+        def __enter__(self): return self
+        def __exit__(self,*args): return None
+        def read(self,limit): return self.body[:limit]
+    def fake_fetch(url,timeout):
+        if url.endswith("/login-ready"):
+            return FakeReply("G1_OWNER_8002_NONCE_PROXY_20261021 クラウドワークス")
+        if url.endswith("/g1/owner/build"):
+            return FakeReply(json.dumps({"source_sha256":"0"*64}))
+        raise AssertionError("unexpected "+url)
+    monkeypatch.setattr(updater,"urlopen",fake_fetch)
+    assert updater._login_controller_current() is False
+    def healthy_fetch(url,timeout):
+        if url.endswith("/login-ready"):
+            return FakeReply("G1_OWNER_8002_NONCE_PROXY_20261021 クラウドワークス")
+        if url.endswith("/g1/owner/build"):
+            return FakeReply(json.dumps({"source_sha256":current}))
+        raise AssertionError("unexpected "+url)
+    monkeypatch.setattr(updater,"urlopen",healthy_fetch)
+    assert updater._login_controller_current() is True

@@ -6,6 +6,7 @@ tokens, real-site sessions, telemetry, or external writes.
 """
 from __future__ import annotations
 
+import hashlib
 import os
 import re
 import secrets
@@ -31,6 +32,9 @@ AUTH_COOKIE = "g1b_dummy"
 AUTH_VALUE = "NOT_A_REAL_ACCOUNT"
 MAX_SECONDS = 300
 _OWNER_ACTION_NONCE = secrets.token_urlsafe(32)
+# Freeze the running module's file hash AT IMPORT TIME. The updating disk
+# copy can differ from the loaded server until its process restarts.
+_OWNER_BUILD_SHA256 = hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
 
 
 class OwnerActionProof(BaseModel):
@@ -386,7 +390,7 @@ def _private_password_reply():
 
 REAL_LOGIN_HTML = r"""<!doctype html><html lang="ja"><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<meta name="referrer" content="no-referrer"><meta name="minifish-login-build" content="G1_OWNER_8002_LIVE_PROBE_20261021"><title>🐟 MiniFish｜クラウドワークスのログイン</title>
+<meta name="referrer" content="no-referrer"><meta name="minifish-login-build" content="G1_OWNER_8002_NONCE_PROXY_20261021"><title>🐟 MiniFish｜クラウドワークスのログイン</title>
 <style>
 body{margin:0;background:#122032;color:#f6faff;font:16px system-ui,sans-serif}
 main{max-width:600px;margin:auto;padding:22px 16px}
@@ -557,6 +561,16 @@ def live_login_page(request: Request):
         REAL_LOGIN_HTML,
         headers={"Cache-Control": "no-store", "Referrer-Policy": "no-referrer",
                  "X-Frame-Options": "DENY"},
+    )
+
+
+@app.get("/g1/owner/build")
+def owner_runtime_build():
+    if not os.getenv("CODESPACE_NAME"):
+        raise HTTPException(403, "OWNER_PRIVATE_CODESPACE_ONLY")
+    return JSONResponse(
+        {"source_sha256": _OWNER_BUILD_SHA256},
+        headers={"Cache-Control": "no-store"},
     )
 
 
