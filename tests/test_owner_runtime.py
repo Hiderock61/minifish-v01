@@ -332,4 +332,4 @@ def test_owner_start_nonce_ui_uses_json_body_without_browser_password():
     assert "JSON.stringify({nonce:ownerStartNonce})" in ui
     assert 'headers:{"Content-Type":"application/json"}' in ui
     assert "G1_OWNER_START_NONCE_20261021" in ui
-    assert "_OWNER_START_NONCE" not in ui
+    assert "secrets.token_urlsafe" not in ui
