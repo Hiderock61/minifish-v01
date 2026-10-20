@@ -155,7 +155,7 @@ def test_login_refresh_stops_only_known_process_then_relaunches(monkeypatch):
     monkeypatch.setattr(updater, "_login_controller_current", ready)
     assert updater.refresh_login_controller() == "READY_LOGIN_UPDATED"
     assert stopped == [(321, signal.SIGTERM)]
-    assert launched[0][0] == ["bash", "start_g1b_mock.sh"]
+    assert launched[0][0][0] == ["bash", "start_g1b_mock.sh"]
     assert launched[0][1]["start_new_session"] is True
 
 
