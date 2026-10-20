@@ -523,6 +523,15 @@ async def home() -> str:
     return CONTROL_HTML
 
 
+@app.get("/api/_maintenance_state")
+async def maintenance_state() -> dict[str, bool]:
+    """Only return whether in-memory jobs are idle, never customer data."""
+    with RUNS_LOCK:
+        active=any(run.get("status") in ("PENDING","RUNNING","WAITING")
+                   for run in RUNS.values())
+    return {"idle":not active}
+
+
 @app.get("/api/_healthcheck")
 async def healthcheck() -> dict[str, Any]:
     return {

@@ -21,4 +21,12 @@ fi
 echo "MiniFish owner login: PRIVATE 8002 / PRIVATE 6081 (mock + login handoff)"
 echo "MiniFish API:    /tmp/minifish-api.log"
 echo "MiniFish Bridge: /tmp/minifish-bridge.log"
+# Run the existing Codespace updater only inside a started Codespace.
+# No paid API, new Codespace, forced reset, or unattended active-login restart.
+if [[ -n "${CODESPACE_NAME:-}" ]] && [[ -f tools/codespace_self_update.py ]]; then
+  if ! pgrep -f '[p]ython tools/codespace_self_update.py --watch' >/dev/null; then
+    mkdir -p "${HOME}/.local/share/minifish"
+    nohup python tools/codespace_self_update.py --watch >"${HOME}/.local/share/minifish/self-update.log" 2>&1 &
+  fi
+fi
 echo "Bridge ready. ChatGPT can enqueue jobs through GitHub Issues."
