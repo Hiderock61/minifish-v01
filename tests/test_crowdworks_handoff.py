@@ -266,9 +266,9 @@ def test_real_owner_nonce_rejects_cross_site_and_bad_content(monkeypatch):
     nonce=client.get("/g1/owner/status").json()["action_nonce"]
     base={"x-minifish-mock-action":"G1B","host":"localhost:8002"}
     for hdr in (
-        {"origin":"https://evil.example","sec-fetch-site":"same-origin"},
+        {"origin":"https://evil.example","sec-fetch-site":"cross-site"},
         {"origin":origin,"sec-fetch-site":"cross-site"},
-        {"origin":"https://something.example","sec-fetch-site":"same-origin"},
+        {"origin":"https://something.example","sec-fetch-site":"cross-site"},
     ):
         r=client.post("/g1/owner/open",json={"nonce":nonce},headers={**base,**hdr})
         assert r.status_code==403
@@ -336,11 +336,11 @@ def test_private_proxy_preflight_matches_owner_start_without_launch(monkeypatch)
         assert result.json()["status"]=="OWNER_ACTION_PROXY_READY"
     assert fake.launch_count==0
     assert client.get("/g1/owner/status").json()["status"]=="LOGIN_NOT_STARTED"
-    # A third-party origin, invalid proof, or cross-site request never passes.
+    # Invalid nonce or browser-identified cross-site request never passes.
     assert client.post("/g1/owner/probe",json={"nonce":"wrong"},
         headers={"origin":browser_origin}).status_code in (403,422)
     assert client.post("/g1/owner/probe",json={"nonce":token},
-        headers={"origin":"https://evil.example"}).status_code==403
+        headers={"origin":"https://evil.example","sec-fetch-site":"cross-site"}).status_code==403
     assert client.post("/g1/owner/probe",json={"nonce":token},
         headers={"origin":browser_origin,"sec-fetch-site":"cross-site"}).status_code==403
 
@@ -353,3 +353,36 @@ def test_browser_preflight_disables_real_buttons_before_proxy_pass():
     assert "自動通信検査で停止：" in html
     assert "UPSTREAM_OR_UNKNOWN_" in html
     assert "操作停止：自動通信検査を通過していません。" in html
+
+
+def test_live_origin_rewrite_no_longer_blocks_private_nonce(monkeypatch):
+    """Previously OWNER_CROSS_ORIGIN_REJECTED; exact same proxy preflight now 200.
+
+    The private nonce and browser fetch-site boundary remain required.
+    """
+    from fastapi.testclient import TestClient
+    monkeypatch.setenv("CODESPACE_NAME", "glorious-disco-real")
+    origin = "https://glorious-disco-real-8002.app.github.dev"
+    client = TestClient(g1b_mock_app.app, base_url=origin)
+    nonce = client.get("/g1/owner/status").json()["action_nonce"]
+    for proxy_origin in (
+        "https://github-port-relay.invalid",
+        "https://glorious-disco-real-8002.app.github.dev:443",
+        "null",
+    ):
+        reply = client.post("/g1/owner/probe", json={"nonce": nonce}, headers={
+            "host": "127.0.0.1:8002", "origin": proxy_origin,
+            "sec-fetch-site": "same-origin",
+        })
+        assert reply.status_code == 200
+        assert reply.json()["status"] == "OWNER_ACTION_PROXY_READY"
+        assert "access-control-allow-origin" not in reply.headers
+        # Possession of a rewritten Origin does NOT bypass proof or fetch-site.
+        denied = client.post("/g1/owner/probe", json={"nonce":"invalid"}, headers={
+            "origin":proxy_origin, "sec-fetch-site":"same-origin",
+        })
+        assert denied.status_code in (403,422)
+        denied = client.post("/g1/owner/probe", json={"nonce":nonce}, headers={
+            "origin":proxy_origin, "sec-fetch-site":"cross-site",
+        })
+        assert denied.status_code == 403

@@ -260,11 +260,14 @@ def require_same_origin(request: Request, *, proof: str = "") -> None:
             raise HTTPException(403, "OWNER_ACTION_PROOF_REQUIRED")
         if request.headers.get("content-type", "").split(";", 1)[0].strip().lower() != "application/json":
             raise HTTPException(403, "OWNER_JSON_REQUIRED")
-        if origin and not (
-            re.fullmatch(r"https://[a-z0-9-]+-8002\.app\.github\.dev", origin)
-            or origin in ("http://127.0.0.1:8002", "http://localhost:8002")
-        ):
-            raise HTTPException(403, "OWNER_CROSS_ORIGIN_REJECTED")
+        # The GitHub PRIVATE forwarding proxy can rewrite Origin and Host
+        # independently. A live owner screenshot confirmed rejection here,
+        # despite the page loading and a correctly acquired private nonce.
+        # Cross-site browser requests are rejected by Sec-Fetch-Site above.
+        # An attacker cannot read the high-entropy nonce from this private
+        # same-origin GET (no CORS); JSON-only POST also requires preflight.
+        # Thus the nonce, not the proxy-dependent Origin string, authorizes
+        # this one owner's request. Never log or expose the nonce.
         return
     # The G1B custom header is for MOCK controls. PRIVATE owner actions use
     # their random JSON nonce, not a header GitHub's proxy might strip.

@@ -67,6 +67,21 @@ def test_real_chromium_probes_post_before_enabling_login(tmp_path):
                     method == "POST" and "/g1/owner/open" in url
                     for method, url, status in requests
                 )
+                # Emulate a Codespaces gateway that rewrites Origin while
+                # retaining a browser-originated same-origin POST and nonce.
+                forwarded = browser.new_page()
+                forwarded.route(
+                    "**/g1/owner/probe",
+                    lambda route: route.continue_(headers={
+                        **route.request.headers,
+                        "origin": "https://github-port-relay.invalid",
+                    }),
+                )
+                forwarded.goto(BASE + "/login-ready")
+                forwarded.locator("#actionResult").get_by_text(
+                    "自動通信検査OK", exact=False
+                ).wait_for(timeout=15000)
+                assert forwarded.locator("#open").is_enabled()
                 # Fake an upstream 403. The page must show this reliably
                 # without an owner button press or any website login.
                 blocked = browser.new_page()
