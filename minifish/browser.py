@@ -8,6 +8,7 @@ import time
 from playwright.sync_api import sync_playwright, Page, Browser, BrowserContext, Playwright
 
 from .models import Observation, Action
+from .session_vault import EncryptedSessionVault
 
 
 class PlaywrightBrowser:
@@ -19,10 +20,14 @@ class PlaywrightBrowser:
         executable_path: str | None = None,
         profile_path: str | None = None,
         capture_dir: str | None = None,
+        session_vault: EncryptedSessionVault | None = None,
     ) -> None:
         self.headless = headless
         self.executable_path = executable_path or os.getenv("MINIFISH_CHROMIUM_PATH")
+        if profile_path and session_vault:
+            raise ValueError("SESSION_VAULT_AND_PLAINTEXT_PROFILE_CONFLICT")
         self.profile_path = Path(profile_path) if profile_path else None
+        self.session_vault = session_vault
         self.capture_dir = Path(capture_dir) if capture_dir else None
         if self.capture_dir:
             self.capture_dir.mkdir(parents=True, exist_ok=True)
@@ -33,31 +38,47 @@ class PlaywrightBrowser:
 
     def __enter__(self) -> "PlaywrightBrowser":
         self._pw = sync_playwright().start()
-        launch_kwargs: dict[str, Any] = {
-            "headless": self.headless,
-            "args": ["--no-sandbox"],
-        }
-        if self.executable_path:
-            launch_kwargs["executable_path"] = self.executable_path
-        self.browser = self._pw.chromium.launch(**launch_kwargs)
+        try:
+            launch_kwargs: dict[str, Any] = {
+                "headless": self.headless,
+                "args": ["--no-sandbox"],
+            }
+            if self.executable_path:
+                launch_kwargs["executable_path"] = self.executable_path
+            self.browser = self._pw.chromium.launch(**launch_kwargs)
 
-        context_kwargs: dict[str, Any] = {}
-        if self.profile_path and self.profile_path.exists():
-            context_kwargs["storage_state"] = str(self.profile_path)
-        self.context = self.browser.new_context(**context_kwargs)
-        self.page = self.context.new_page()
-        return self
+            context_kwargs: dict[str, Any] = {}
+            if self.session_vault:
+                state = self.session_vault.load()  # fail closed on corrupt vault
+                if state is not None:
+                    context_kwargs["storage_state"] = state
+            elif self.profile_path and self.profile_path.exists():
+                context_kwargs["storage_state"] = str(self.profile_path)
+            self.context = self.browser.new_context(**context_kwargs)
+            self.page = self.context.new_page()
+            return self
+        except Exception:
+            if self.browser:
+                self.browser.close()
+            if self._pw:
+                self._pw.stop()
+            raise
 
     def __exit__(self, exc_type, exc, tb) -> None:
-        if self.context and self.profile_path:
-            self.profile_path.parent.mkdir(parents=True, exist_ok=True)
-            self.context.storage_state(path=str(self.profile_path))
-        if self.context:
-            self.context.close()
-        if self.browser:
-            self.browser.close()
-        if self._pw:
-            self._pw.stop()
+        try:
+            if self.context and exc_type is None:
+                if self.session_vault:
+                    self.session_vault.save(self.context.storage_state())
+                elif self.profile_path:
+                    self.profile_path.parent.mkdir(parents=True, exist_ok=True)
+                    self.context.storage_state(path=str(self.profile_path))
+        finally:
+            if self.context:
+                self.context.close()
+            if self.browser:
+                self.browser.close()
+            if self._pw:
+                self._pw.stop()
 
     @property
     def current_url(self) -> str:
