@@ -184,7 +184,7 @@ def test_real_private_page_survives_proxy_host_rewrite(monkeypatch):
         })
         result = g1b_mock_app.live_login_page(request)
         assert result.status_code == 200
-        assert b"G1_OWNER_8002_PROXY_FIX_20261021" in result.body
+        assert b"G1_OWNER_8002_ACTION_PROOF_20261021" in result.body
         assert result.headers["x-frame-options"] == "DENY"
     monkeypatch.delenv("CODESPACE_NAME")
     with pytest.raises(HTTPException):
