@@ -106,3 +106,58 @@ def test_ready_requires_controller_and_screen(monkeypatch, tmp_path):
     assert owner_runtime.diagnose()["status"] == "PARTIAL_NEEDS_INSPECTION"
     monkeypatch.setattr(owner_runtime, "_app_ready", lambda: True)
     assert owner_runtime.diagnose() == {"status": "READY", "can_start": False}
+
+
+@pytest.mark.parametrize("remote,expected", [
+    ("OPENING_PRIVATE_BROWSER", "STARTING_CHROMIUM"),
+    ("WAITING_FOR_HUMAN", "WAITING_FOR_HUMAN"),
+    ("BLOCKED_PRIVATE_BROWSER", "FAILED_CHROMIUM"),
+    ("BLOCKED_LOGIN_PAGE", "FAILED_CHROMIUM"),
+    ("LOGIN_NOT_STARTED", None),
+])
+def test_chromium_phase_does_not_expose_action_nonce(monkeypatch, remote, expected):
+    class SafeResponse:
+        status = 200
+        def __enter__(self): return self
+        def __exit__(self, *args): return False
+        def read(self, count): 
+            assert count <= 4000
+            return ('{"status":"' + remote + '","action_nonce":"PRIVATE_NEVER_RETURN"}').encode()
+    def fake_urlopen(request, timeout):
+        assert request.full_url == "http://127.0.0.1:8002/g1/owner/status"
+        assert timeout <= 1
+        return SafeResponse()
+    monkeypatch.setattr(owner_runtime, "urlopen", fake_urlopen)
+    assert owner_runtime._handoff_phase() == expected
+
+
+@pytest.mark.parametrize("marker,expected", [
+    ("G1B_START_FAILED_VNC", "FAILED_VNC"),
+    ("G1B_START_FAILED_NOVNC", "FAILED_NOVNC"),
+    ("G1B_START_FAILED_CONTROLLER", "FAILED_CONTROLLER"),
+])
+def test_failure_injection_maps_fixed_code_without_secret(monkeypatch, tmp_path, marker, expected):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    logdir = tmp_path / ".local/share/minifish"
+    logdir.mkdir(parents=True, mode=0o700)
+    log = logdir / "owner-desktop-boot.log"
+    log.write_text("PRIVATE_DO_NOT_DISCLOSE\n" + marker + "\n")
+    log.chmod(0o600)
+    assert owner_runtime._known_failure() == expected
+    assert "PRIVATE_DO_NOT_DISCLOSE" not in owner_runtime._known_failure()
+
+
+def test_runtime_owner_reports_chromium_progress_only_after_both_ports(monkeypatch, tmp_path):
+    monkeypatch.setenv("CODESPACE_NAME", "test-codespace")
+    monkeypatch.setattr(owner_runtime, "_BOOT_REQUESTED_AT", 0.0)
+    script = tmp_path / "start_g1b_mock.sh"
+    script.touch()
+    monkeypatch.setattr(owner_runtime, "_SCRIPT", script)
+    monkeypatch.setattr(owner_runtime, "_tcp_ready", lambda port: True)
+    monkeypatch.setattr(owner_runtime, "_app_ready", lambda: True)
+    monkeypatch.setattr(owner_runtime, "_handoff_phase", lambda: "WAITING_FOR_HUMAN")
+    assert owner_runtime.diagnose() == {"status": "WAITING_FOR_HUMAN", "can_start": False}
+    monkeypatch.setattr(owner_runtime, "_handoff_phase", lambda: "FAILED_CHROMIUM")
+    assert owner_runtime.diagnose() == {"status": "FAILED_CHROMIUM", "can_start": False}
+    monkeypatch.setattr(owner_runtime, "_tcp_ready", lambda port: False)
+    assert owner_runtime.diagnose() == {"status": "PARTIAL_NEEDS_INSPECTION", "can_start": False}
