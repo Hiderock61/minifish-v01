@@ -161,3 +161,12 @@ def test_runtime_owner_reports_chromium_progress_only_after_both_ports(monkeypat
     assert owner_runtime.diagnose() == {"status": "FAILED_CHROMIUM", "can_start": False}
     monkeypatch.setattr(owner_runtime, "_tcp_ready", lambda port: False)
     assert owner_runtime.diagnose() == {"status": "PARTIAL_NEEDS_INSPECTION", "can_start": False}
+
+
+def test_early_failure_cleans_up_private_vnc_auth():
+    script = (ROOT / "start_g1b_mock.sh").read_text()
+    assert script.index("flock -n 9") < script.index("trap cleanup EXIT")
+    assert script.index("trap cleanup EXIT") < script.index('vncpasswd -f')
+    assert script.index("desktop_started=1") < script.index('write_stage STARTING_NOVNC')
+    assert 'rm -f "$private_dir/vnc-password.txt" "$private_dir/vnc-passwd"' in script
+    assert subprocess.run(["bash", "-n", str(ROOT / "start_g1b_mock.sh")]).returncode == 0
