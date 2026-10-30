@@ -40,6 +40,10 @@ _START_ERRORS = (
     ("G1B_START_FAILED_LOCAL_LISTENER", "LOCAL_SCREEN_UNAVAILABLE"),
     ("G1B_START_FAILED_CONTROLLER", "LOGIN_CONTROLLER_FAILED"),
     ("G1B_START_FAILED_INITIAL", "BOOT_BLOCKED"),
+    ("G1B_BLOCKED_ALREADY_STARTING", "PARTIAL_NEEDS_INSPECTION"),
+    ("G1B_BLOCKED_RUNTIME_LOCK_UNSAFE", "PRIVATE_DIRECTORY_UNSAFE"),
+    ("G1B_BLOCKED_PRIVATE_DIR_UNSAFE", "PRIVATE_DIRECTORY_UNSAFE"),
+    ("G1B_BLOCKED_RUNTIME_LOCK_MISSING", "BOOT_BLOCKED"),
 )
 
 
@@ -129,6 +133,48 @@ def _desktop_dependencies_present() -> bool:
                 and list(Path("/usr/local/novnc").glob("noVNC*/utils/novnc_proxy")))
 
 
+_STARTING_STAGES = frozenset((
+    "STARTING_VNC", "STARTING_NOVNC", "STARTING_CONTROLLER",
+))
+
+
+def _private_state_path() -> Path:
+    return Path.home() / ".local/share/minifish/g1b-mock-only/runtime.stage"
+
+
+def _process_still_running(pid: int) -> bool:
+    """PID reuse must not turn a stale stage record into a live launcher."""
+    if pid <= 1:
+        return False
+    try:
+        cmdline = Path(f"/proc/{pid}/cmdline").read_bytes()
+        return b"start_g1b_mock.sh" in cmdline
+    except OSError:
+        return False
+
+
+def _active_stage() -> str | None:
+    """Read a private fixed-code stage; never trust arbitrary log text."""
+    path = _private_state_path()
+    try:
+        if path.is_symlink():
+            return "PARTIAL_NEEDS_INSPECTION"
+        meta = path.stat()
+        if (not stat.S_ISREG(meta.st_mode) or meta.st_uid != os.geteuid()
+                or stat.S_IMODE(meta.st_mode) != 0o600):
+            return "PARTIAL_NEEDS_INSPECTION"
+        # Ignore stale state after a Codespace restart or launcher crash.
+        fields = path.read_text(encoding="ascii").strip().split()
+        if len(fields) != 2:
+            return None
+        pid, stage = fields
+        if stage in _STARTING_STAGES and _process_still_running(int(pid)):
+            return stage
+    except (OSError, ValueError, UnicodeError):
+        return None
+    return None
+
+
 def diagnose() -> dict[str, object]:
     """Fixed status and one-click eligibility for an owner-private control UI."""
     global _BOOT_REQUESTED_AT
@@ -143,13 +189,15 @@ def diagnose() -> dict[str, object]:
         return {"status": "PARTIAL_NEEDS_INSPECTION", "can_start": False}
     if not _SCRIPT.is_file():
         return {"status": "SCRIPT_MISSING", "can_start": False}
+    stage = _active_stage()
+    if stage:
+        return {"status": stage, "can_start": False}
     if _BOOT_REQUESTED_AT:
         if time.monotonic() - _BOOT_REQUESTED_AT < _BOOT_GRACE_SECONDS:
             return {"status": "STARTING", "can_start": False}
         return {"status": _known_failure(), "can_start": True}
-    # No launch has been requested via this process; a failed old startup
-    # can be retried manually with one click.
-    return {"status": "OFFLINE", "can_start": True}
+    # The Runtime is intentionally not auto-started at Codespace boot.
+    return {"status": "STOPPED", "can_start": True}
 
 
 def start_owner_desktop() -> dict[str, object]:
