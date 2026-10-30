@@ -30,7 +30,7 @@ def test_status_reports_listening_ports_not_declared_ports(monkeypatch, tmp_path
     monkeypatch.setattr(owner_runtime,"_SCRIPT",script)
     monkeypatch.setattr(owner_runtime,"_app_ready",lambda: False)
     monkeypatch.setattr(owner_runtime,"_tcp_ready",lambda port: False)
-    assert owner_runtime.diagnose()=={"status":"OFFLINE","can_start":True}
+    assert owner_runtime.diagnose()=={"status":"STOPPED","can_start":True}
     monkeypatch.setattr(owner_runtime,"_tcp_ready",lambda port: True)
     assert owner_runtime.diagnose()["status"]=="PARTIAL_NEEDS_INSPECTION"
     monkeypatch.setattr(owner_runtime,"_app_ready",lambda: True)
