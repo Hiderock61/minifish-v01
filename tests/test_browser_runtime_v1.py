@@ -170,3 +170,32 @@ def test_early_failure_cleans_up_private_vnc_auth():
     assert script.index("desktop_started=1") < script.index('write_stage STARTING_NOVNC')
     assert 'rm -f "$private_dir/vnc-password.txt" "$private_dir/vnc-passwd"' in script
     assert subprocess.run(["bash", "-n", str(ROOT / "start_g1b_mock.sh")]).returncode == 0
+
+
+def test_simultaneous_owner_clicks_spawn_only_one_browser_runtime(monkeypatch, tmp_path):
+    from threading import Barrier, Thread
+    monkeypatch.setenv("CODESPACE_NAME", "test-codespace")
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setattr(owner_runtime, "_BOOT_REQUESTED_AT", 0.0)
+    script = tmp_path / "start_g1b_mock.sh"
+    script.touch()
+    monkeypatch.setattr(owner_runtime, "_SCRIPT", script)
+    monkeypatch.setattr(owner_runtime, "_active_stage", lambda: None)
+    monkeypatch.setattr(owner_runtime, "_app_ready", lambda: False)
+    monkeypatch.setattr(owner_runtime, "_tcp_ready", lambda port: False)
+    monkeypatch.setattr(owner_runtime, "_desktop_dependencies_present", lambda: True)
+    launched = []
+    monkeypatch.setattr(owner_runtime.subprocess, "Popen",
+                        lambda *a, **k: launched.append((a,k)) or object())
+    barrier = Barrier(3)
+    results = []
+    def click():
+        barrier.wait()
+        results.append(owner_runtime.start_owner_desktop())
+    workers = [Thread(target=click) for _ in range(2)]
+    for thread in workers: thread.start()
+    barrier.wait()
+    for thread in workers: thread.join(timeout=3)
+    assert all(not thread.is_alive() for thread in workers)
+    assert len(launched) == 1
+    assert [r["status"] for r in results] == ["STARTING", "STARTING"]
