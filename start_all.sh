@@ -14,11 +14,11 @@ if ! pgrep -f "python bridge_worker.py" >/dev/null; then
   nohup python bridge_worker.py >/tmp/minifish-bridge.log 2>&1 &
 fi
 
-if [[ -n "${CODESPACE_NAME:-}" ]] && ! pgrep -f "uvicorn g1b_mock_app:app" >/dev/null; then
-  nohup bash start_g1b_mock.sh >/tmp/minifish-g1b-mock.log 2>&1 &
-fi
+# Browser Runtime v1: do NOT auto-start G1b here. The private owner API
+# (owner_runtime.start_owner_desktop) is the only launch authority.
+# The old uvicorn pgrep guard missed the VNC/noVNC startup window.
 
-echo "MiniFish owner login: PRIVATE 8002 / PRIVATE 6081 (mock + login handoff)"
+echo "MiniFish owner login: on-demand via PRIVATE 8000; PRIVATE 8002 / 6081 stay closed until ready"
 echo "MiniFish API:    /tmp/minifish-api.log"
 echo "MiniFish Bridge: /tmp/minifish-bridge.log"
 # Run the existing Codespace updater only inside a started Codespace.
