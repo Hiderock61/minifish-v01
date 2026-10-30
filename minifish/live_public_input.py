@@ -6,6 +6,7 @@ The input is innocuous; all outbound paths/query parameters are restricted.
 from __future__ import annotations
 
 import json
+import re
 from urllib.parse import urlsplit
 
 from .browser import PlaywrightBrowser
@@ -15,6 +16,20 @@ PUBLIC_URL = PUBLIC_SITES["python"].url
 SEARCH_URL = "https://docs.python.org/3/search.html"
 TEXT = "MiniFish browser input check"
 MAX_RESOURCE_COUNT = 250
+
+
+def _official_python_documentation_title(value: str) -> bool:
+    """Require a versioned official Python documentation title.
+
+    Sphinx uses lowercase 'documentation' on the current public site.
+    Checking just the substring 'Documentation' fails for genuine pages,
+    while accepting an arbitrary page containing that word is too broad.
+    """
+    return bool(re.fullmatch(
+        r"Python 3\.[0-9]+(?:\.[0-9]+)? documentation",
+        value.strip(), flags=re.IGNORECASE,
+    ))
+
 
 
 def real_public_typing() -> dict[str, object]:
@@ -63,16 +78,25 @@ def real_public_typing() -> dict[str, object]:
                 return report
             browser.context.route("**/*", only_safe_public_get)
             response = browser.page.goto(PUBLIC_URL, wait_until="domcontentloaded", timeout=20000)
+            # Record only safe public metadata. No HTML, URL query, cookie or form.
+            if response is not None:
+                report["public_http_status"] = response.status
             if (response is None or response.status != 200 or
                     not observed_url_allowed(PUBLIC_SITES["python"], browser.current_url)):
                 report["reason"] = "PUBLIC_READ_FAILED"
                 return report
-            if "Documentation" not in browser.page.title():
+            report["public_final_url"] = browser.current_url
+            title = browser.page.title()
+            # A bounded title makes a future failure inspectable without raw HTML.
+            report["public_title"] = title[:100]
+            if not _official_python_documentation_title(title):
                 report["reason"] = "PUBLIC_PAGE_UNEXPECTED"
                 return report
             report["observed_public_page"] = True
             # Search is part of the official Python docs and needs no account.
             response = browser.page.goto(SEARCH_URL, wait_until="domcontentloaded", timeout=16000)
+            if response is not None:
+                report["search_http_status"] = response.status
             if (response is None or response.status != 200 or
                     browser.current_url != SEARCH_URL):
                 report["reason"] = "SEARCH_PAGE_UNAVAILABLE"
