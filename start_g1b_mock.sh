@@ -52,6 +52,22 @@ write_stage() {
 }
 write_stage STARTING_VNC
 
+# Register cleanup BEFORE password generation or desktop startup.
+# Only the process holding the exclusive runtime lock reaches this trap.
+proxy_pid=0
+desktop_started=0
+cleanup() {
+  if (( proxy_pid > 0 )); then
+    kill "$proxy_pid" >/dev/null 2>&1 || true
+  fi
+  if (( desktop_started == 1 )); then
+    tigervncserver -kill :11 >/dev/null 2>&1 || true
+  fi
+  rm -f "$private_dir/vnc-password.txt" "$private_dir/vnc-passwd"
+}
+trap cleanup EXIT
+trap 'exit 0' TERM INT
+
 startup_stage="PASSWORD"
 # Fail closed on symlink/unsafe file. Random password lives ONLY in Codespaces home.
 python - "$private_dir/vnc-password.txt" <<'PY'
@@ -118,6 +134,7 @@ fi
 tigervncserver :11 -geometry 1280x768 -depth 24 -rfbport 5911 \
   -localhost -SecurityTypes VncAuth -passwd "$private_dir/vnc-passwd" \
   -xstartup "$(command -v fluxbox)" -desktop MiniFish-G1b >/dev/null
+desktop_started=1
 
 # Do not expose 8002 until the private mock desktop successfully started.
 startup_stage="NOVNC"
@@ -126,14 +143,6 @@ nohup "${proxies[0]}" --listen 6081 --vnc localhost:5911 \
   >"$private_dir/novnc.log" 2>&1 &
 proxy_pid=$!
 export DISPLAY=:11
-
-cleanup() {
-  kill "$proxy_pid" >/dev/null 2>&1 || true
-  tigervncserver -kill :11 >/dev/null 2>&1 || true
-  rm -f "$private_dir/vnc-password.txt" "$private_dir/vnc-passwd"
-}
-trap cleanup EXIT
-trap 'exit 0' TERM INT
 
 # The forwardPorts list is not evidence that a server listens. Verify both
 # local services before marking the controller ready.
