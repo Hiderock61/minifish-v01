@@ -19,8 +19,38 @@ report_boot_error() {
 }
 trap 'report_boot_error' ERR
 private_dir="$HOME/.local/share/minifish/g1b-mock-only"
+if [[ -L "$private_dir" ]]; then
+  echo "G1B_BLOCKED_PRIVATE_DIR_UNSAFE"
+  exit 1
+fi
 mkdir -p "$private_dir"
 chmod 700 "$private_dir"
+
+# Lock the entire VNC -> noVNC -> controller lifetime, not merely the
+# uvicorn phase. A second invocation fails closed without killing the first.
+runtime_lock="$private_dir/runtime.lock"
+if [[ -L "$runtime_lock" ]]; then
+  echo "G1B_BLOCKED_RUNTIME_LOCK_UNSAFE"
+  exit 1
+fi
+command -v flock >/dev/null || { echo "G1B_BLOCKED_RUNTIME_LOCK_MISSING"; exit 1; }
+umask 077
+exec 9>"$runtime_lock"
+if ! flock -n 9; then
+  echo "G1B_BLOCKED_ALREADY_STARTING"
+  exit 1
+fi
+
+# Only fixed state labels and PID in a private, atomic status record.
+# The owner API verifies that the writer PID is still a live launcher.
+write_stage() {
+  local temp
+  temp="$(mktemp "$private_dir/.runtime-stage-XXXXXXXX")"
+  chmod 600 "$temp"
+  printf '%s %s\n' "$" "$1" >"$temp"
+  mv -f "$temp" "$private_dir/runtime.stage"
+}
+write_stage STARTING_VNC
 
 startup_stage="PASSWORD"
 # Fail closed on symlink/unsafe file. Random password lives ONLY in Codespaces home.
@@ -91,6 +121,7 @@ tigervncserver :11 -geometry 1280x768 -depth 24 -rfbport 5911 \
 
 # Do not expose 8002 until the private mock desktop successfully started.
 startup_stage="NOVNC"
+write_stage STARTING_NOVNC
 nohup "${proxies[0]}" --listen 6081 --vnc localhost:5911 \
   >"$private_dir/novnc.log" 2>&1 &
 proxy_pid=$!
@@ -120,6 +151,7 @@ for port in (5911, 6081):
         sys.exit(1)
 PY
 startup_stage="CONTROLLER"
+write_stage STARTING_CONTROLLER
 trap - ERR
 echo "G1B_PRIVATE_MOCK_READY=1 PORTS=8002,6081"
 uvicorn g1b_mock_app:app --host 0.0.0.0 --port 8002 \
