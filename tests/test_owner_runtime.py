@@ -181,7 +181,7 @@ def test_missing_desktop_tool_fails_closed_no_process(monkeypatch,tmp_path):
 
 
 @pytest.mark.parametrize("raw,expected", [
-    ("G1B_START_FAILED_VNC", "DESKTOP_START_FAILED"),
+    ("G1B_START_FAILED_VNC", "FAILED_VNC"),
     ("G1B_START_FAILED_LOCAL_LISTENER", "LOCAL_SCREEN_UNAVAILABLE"),
     ("G1B_START_FAILED_PASSWORD", "AUTH_SETUP_FAILED"),
     ("G1B_BLOCKED_WINDOW_MANAGER_MISSING", "DESKTOP_MISSING"),
@@ -214,7 +214,7 @@ def test_diagnose_reads_legacy_poststart_log_without_exposing_contents(monkeypat
     legacy.write_text("unrelated SECRET=session-abc\nG1B_START_FAILED_VNC\n")
     legacy.chmod(0o644)
     monkeypatch.setattr(owner_runtime, "_legacy_log_path", lambda:legacy)
-    assert owner_runtime._known_failure()=="DESKTOP_START_FAILED"
+    assert owner_runtime._known_failure()=="FAILED_VNC"
     assert "session-abc" not in owner_runtime._known_failure()
 
 
