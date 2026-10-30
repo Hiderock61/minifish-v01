@@ -7,6 +7,7 @@ content, cookies, or arbitrary log data. Never starts a billable service.
 from __future__ import annotations
 
 import os
+import json
 from pathlib import Path
 import shutil
 import socket
@@ -73,6 +74,26 @@ def _app_ready() -> bool:
             )
     except (OSError, TimeoutError, HTTPError, URLError):
         return False
+
+
+
+def _handoff_phase() -> str | None:
+    """Read only a fixed browser phase from the separate private 8002 process."""
+    phases = {
+        "OPENING_PRIVATE_BROWSER": "STARTING_CHROMIUM",
+        "WAITING_FOR_HUMAN": "WAITING_FOR_HUMAN",
+        "BLOCKED_PRIVATE_BROWSER": "FAILED_CHROMIUM",
+        "BLOCKED_LOGIN_PAGE": "FAILED_CHROMIUM",
+    }
+    try:
+        with urlopen(Request("http://127.0.0.1:8002/g1/owner/status"),
+                     timeout=0.85) as result:
+            if result.status != 200:
+                return None
+            data = json.loads(result.read(4000))
+        return phases.get(data.get("status")) if isinstance(data, dict) else None
+    except (OSError, ValueError, TypeError):
+        return None
 
 
 def _private_log_path() -> Path:
@@ -184,7 +205,8 @@ def diagnose() -> dict[str, object]:
     controller = _app_ready()
     if controller and screen:
         _BOOT_REQUESTED_AT = 0
-        return {"status": "READY", "can_start": False}
+        phase = _handoff_phase()
+        return {"status": phase or "READY", "can_start": False}
     if controller or screen:
         return {"status": "PARTIAL_NEEDS_INSPECTION", "can_start": False}
     if not _SCRIPT.is_file():
