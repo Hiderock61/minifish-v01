@@ -5,9 +5,9 @@ import os
 from pathlib import Path
 import subprocess
 import time
-import traceback
 
 from minifish import Action, MiniFishRunner, OpenAIPlanner, ScriptedPlanner
+from minifish import github_issue_transport as issue_transport
 
 REPO = os.getenv("MINIFISH_BRIDGE_REPO", "Hiderock61/minifish-v01")
 OWNER = os.getenv("MINIFISH_BRIDGE_OWNER", "Hiderock61")
@@ -16,34 +16,16 @@ RUN_ROOT = Path(os.getenv("MINIFISH_RUN_ROOT", ".minifish/runs"))
 PROFILE_PATH = os.getenv("MINIFISH_PROFILE_PATH", ".minifish/profile.json")
 
 
-def gh(*args: str) -> str:
-    p = subprocess.run(["gh", *args], check=True, text=True, capture_output=True)
-    return p.stdout
-
-
 def list_jobs() -> list[dict]:
-    raw = gh(
-        "issue", "list",
-        "--repo", REPO,
-        "--state", "open",
-        "--search", "[MINIFISH JOB] in:title",
-        "--limit", "20",
-        "--json", "number,title,body,author",
-    )
-    jobs = json.loads(raw)
-    return [
-        j for j in jobs
-        if j.get("title", "").startswith("[MINIFISH JOB]")
-        and (j.get("author") or {}).get("login") == OWNER
-    ]
+    return issue_transport.list_jobs(REPO, OWNER)
 
 
-def comment(number: int, text: str) -> None:
-    gh("issue", "comment", str(number), "--repo", REPO, "--body", text)
+def comment(number: int, message: str) -> None:
+    issue_transport.comment(REPO, number, message)
 
 
 def close(number: int) -> None:
-    gh("issue", "close", str(number), "--repo", REPO)
+    issue_transport.close(REPO, number)
 
 
 def run_job(issue: dict) -> dict:
@@ -57,6 +39,22 @@ def run_job(issue: dict) -> dict:
 
     issue_no = int(issue["number"])
     run_dir = RUN_ROOT / f"issue_{issue_no}"
+
+    if mode == "owner_status":
+        # Owner-authorized internal-only status. No website visit, cookie,
+        # screenshot, API key, request header or raw log leaves Codespaces.
+        from minifish.owner_runtime import diagnose
+        report = diagnose()
+        return {
+            "mode": "owner_status",
+            "run_id": f"issue_{issue_no}",
+            "status": report["status"],
+            "can_start": bool(report["can_start"]),
+            "external_web_calls": 0,
+            "website_writes": 0,
+            "credential_values_included": False,
+            "owner_login_verified": False,
+        }
 
     if mode == "read_only":
         # One-shot GitHub Actions route. No OpenAIPlanner, login, cookies or clicks.
@@ -77,6 +75,8 @@ def run_job(issue: dict) -> dict:
         start_url = "about:blank"
         start_html = DEMO_HTML
     elif mode == "agent":
+        if os.getenv("MINIFISH_ALLOW_PAID_BRIDGE_AGENT") != "1":
+            raise ValueError("PAID_AGENT_DISABLED_BY_DEFAULT")
         if not url.startswith(("http://", "https://")):
             raise ValueError("agent mode requires an http(s) url")
         planner = OpenAIPlanner()
@@ -90,7 +90,7 @@ def run_job(issue: dict) -> dict:
         max_steps=25,
         max_duration_seconds=180,
         headless=True,
-        profile_path=PROFILE_PATH,
+        profile_path=None,  # Never persist live login cookies in legacy plaintext JSON
         capture_dir=str(run_dir / "captures"),
         log_path=str(run_dir / "run.json"),
     )
@@ -107,7 +107,7 @@ def run_job(issue: dict) -> dict:
 
 
 def main() -> None:
-    print(f"MiniFish GitHub Bridge watching {REPO} for jobs from {OWNER}", flush=True)
+    print("MiniFish bridge status: " + issue_transport.transport_ready(), flush=True)
     seen: set[int] = set()
 
     while True:
@@ -126,12 +126,17 @@ def main() -> None:
                     comment(
                         number,
                         "🐟 MiniFish Bridge failed.\n\n"
-                        + f"{type(exc).__name__}: {exc}\n"
-                        + traceback.format_exc(limit=3),
+                        + "ERROR_TYPE=" + type(exc).__name__,
                     )
                     close(number)
+        except issue_transport.BridgeTransportError as exc:
+            # Fixed machine-readable error only, never secrets or raw body.
+            print("bridge transport: " + str(exc), flush=True)
+            if issue_transport.transport_ready() == "BLOCKED_NO_GITHUB_AUTH":
+                time.sleep(max(POLL_SECONDS, 60))
+                continue
         except Exception as exc:
-            print(f"bridge loop error: {type(exc).__name__}: {exc}", flush=True)
+            print("bridge loop error: " + type(exc).__name__, flush=True)
         time.sleep(POLL_SECONDS)
 
 

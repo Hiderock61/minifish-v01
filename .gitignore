@@ -9,3 +9,6 @@ run_logs/ai_captures/
 .DS_Store
 
 .minifish/
+# Session encryption vaults are private even outside .minifish/
+*.vault
+.session-tmp-*
