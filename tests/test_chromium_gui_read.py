@@ -43,7 +43,7 @@ class GuiProofTests(unittest.TestCase):
         self.assertNotIn("https://crowdworks.jp",code)
         self.assertNotIn("urlopen(Request('https://",code)
         self.assertNotIn("page.screenshot",code)
-        self.assertNotIn("POST",code.split("def owner_status")[1].split("def run_cmd")[0].replace('"POST"',"""))
+        self.assertNotIn("POST",code.split("def owner_status")[1].split("def run_cmd")[0].replace('"POST"',""))
 
     def test_owner_status_discard_nonce(self):
         class Reply:
