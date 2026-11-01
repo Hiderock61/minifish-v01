@@ -33,7 +33,7 @@ git show FETCH_HEAD:tools/novnc_local_accept.py > /tmp/minifish-novnc-local-acce
 git hash-object /tmp/minifish-novnc-local-accept.py
 \`\`\`
 
-**期待Git blob SHA：取得・GitHub再読後に確定。** この文書中のSHAを空欄のまま推測して実行してはならない。実行前にWorkがGitHub側の正本SHAと比較すること。
+**期待Git blob SHA：`5bd38b3b29fb89d9c80a5cadfc6cf5a86e90a4df`。** 完全一致した場合だけ実行し、不一致ならHOLD。
 
 5. まず \`python /tmp/minifish-novnc-local-accept.py --check\`。固定\`GATE_READY\`以外はHOLD。
 6. PASS後、次を**1回だけ**：
