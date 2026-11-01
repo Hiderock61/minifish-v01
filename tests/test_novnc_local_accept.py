@@ -49,6 +49,7 @@ class LocalAcceptanceSecurityTests(unittest.TestCase):
         self.assertEqual(str(ctx.exception), "HOLD_PRIVATE_PATH_UNSAFE")
 
     def test_subdirectory_symlink_rejected(self):
+        self.secret.unlink()
         self.private.rmdir()
         self.private.symlink_to(self.root)
         with self.assertRaises(mod.Hold): mod.file_guard()
