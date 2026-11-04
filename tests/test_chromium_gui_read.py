@@ -108,6 +108,11 @@ class RegressionTests(unittest.TestCase):
             self.assertEqual(m.windows(), ["0x12", "0x13"])
             self.assertEqual(cmd.call_args.args[0], ["xwininfo", "-root", "-tree"])
 
+    def test_tree_prioritizes_class_but_still_requires_full_inspection(self):
+        tree = '  0x11 "helper" ("x" "X")\n  0x12 "page" ("chromium" "Chromium")\n'
+        with patch.object(m.shutil,"which",return_value="tool"), patch.object(m,"run_cmd",side_effect=["",tree]):
+            self.assertEqual(m.windows(),["0x12","0x11"])
+
     def test_existing_list_does_not_read_tree(self):
         with patch.object(m.shutil, "which", return_value="tool"), patch.object(m, "run_cmd", return_value="_NET_CLIENT_LIST(WINDOW): 0x12") as cmd:
             self.assertEqual(m.windows(), ["0x12"])
