@@ -129,7 +129,11 @@ def windows() -> list[str]:
     if not ids:
         text = run_cmd(["xwininfo", "-root", "-tree"])
         # Only leading X11 window IDs, never IDs embedded in window titles.
-        ids = list(dict.fromkeys(re.findall(r"^\s*(0x[0-9a-fA-F]{1,8})\s", text, re.M)))
+        lines = text.splitlines()
+        preferred = [line for line in lines if re.search(
+            r'\("(?:chromium|google-chrome|chrome-browser)"\s+"[^"\n]*"\)', line, re.I)]
+        ordered = "\n".join(preferred + lines)
+        ids = list(dict.fromkeys(re.findall(r"^\s*(0x[0-9a-fA-F]{1,8})\s", ordered, re.M)))
     return ids[:MAX_WINDOWS]
 
 
