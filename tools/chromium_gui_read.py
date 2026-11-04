@@ -5,9 +5,8 @@ Reads local X11 window metadata and localhost:8002 fixed owner status.
 Never captures pixels, prints titles or process arguments, changes browser,
 reads VNC passwords, sends POST, or makes an external network request.
 
-An X11 mapped Chromium window and WAITING_FOR_HUMAN support the claim
-"Chromium window mapped & CrowdWorks navigation completed in controller".
-They DO NOT prove a human visually read the page's pixels.
+Window detection and controller readiness are separate from URL verification.
+No page URL is read by this diagnostic, so URL arrival remains UNVERIFIED.
 """
 from __future__ import annotations
 
@@ -21,6 +20,7 @@ import socket
 import stat
 import subprocess
 import sys
+import time
 from urllib.error import HTTPError, URLError
 from urllib.request import HTTPRedirectHandler, ProxyHandler, Request, build_opener
 
@@ -36,7 +36,9 @@ STATES = frozenset(("LOGIN_NOT_STARTED", "OPENING_PRIVATE_BROWSER", "WAITING_FOR
     "STOPPED_NO_AUTH_ASSERTION", "BLOCKED_PRIVATE_BROWSER", "BLOCKED_LOGIN_PAGE",
     "SESSION_SAVED_LOGIN_UNVERIFIED", "SESSION_REOPENED_LOGIN_NOT_VERIFIED",
     "NO_SAVED_SESSION"))
-MAX_WINDOWS = 40
+MAX_WINDOWS = 160
+WAIT_SECONDS = 20
+DEADLINE: float | None = None
 OPENER = build_opener(ProxyHandler({}), HTTPRedirectHandler())
 
 
@@ -110,7 +112,8 @@ def run_cmd(args: list[str]) -> str:
     try:
         proc = subprocess.run(args, env={**os.environ, "DISPLAY":":11"},
                               capture_output=True, text=True,
-                              timeout=5, check=False)
+                              timeout=min(5, max(0.01, DEADLINE - time.monotonic()))
+                              if DEADLINE is not None else 5, check=False)
     except (OSError, subprocess.TimeoutExpired):
         raise Hold("HOLD_X11_QUERY_UNAVAILABLE") from None
     if proc.returncode != 0 or len(proc.stdout) > 24000:
@@ -123,6 +126,10 @@ def windows() -> list[str]:
         raise Hold("HOLD_X11_UTILITIES_MISSING")
     text = run_cmd(["xprop", "-root", "_NET_CLIENT_LIST"])
     ids = list(dict.fromkeys(re.findall(r"0x[0-9a-fA-F]{1,8}", text)))
+    if not ids:
+        text = run_cmd(["xwininfo", "-root", "-tree"])
+        # Only leading X11 window IDs, never IDs embedded in window titles.
+        ids = list(dict.fromkeys(re.findall(r"^\s*(0x[0-9a-fA-F]{1,8})\s", text, re.M)))
     return ids[:MAX_WINDOWS]
 
 
@@ -168,6 +175,8 @@ def inspect() -> tuple[str, dict[str, object]]:
     pid_verified = False
     count = 0
     for win in ids:
+        if DEADLINE is not None and time.monotonic() >= DEADLINE:
+            raise Hold("HOLD_OBSERVATION_DEADLINE")
         # IDs come only from bounded xprop's 0xHEX window list.
         try:
             props = run_cmd(["xprop", "-id", win, "WM_CLASS", "_NET_WM_PID"])
@@ -184,33 +193,52 @@ def inspect() -> tuple[str, dict[str, object]]:
                 count += 1
         except Hold:
             continue
-    fields = {"owner_status": state, "x11_window_count_bounded": len(ids),
+    final_state = owner_status()
+    state_stable = state == final_state
+    fields = {"owner_status": final_state, "owner_state_stable": state_stable,
+              "crowdworks_url_arrival": "UNVERIFIED",
+              "url_observed": False, "x11_window_count_bounded": len(ids),
               "chromium_class_seen": chromium_class,
               "chromium_pid_owner_verified": pid_verified,
               "chromium_mapped_viewable": mapped,
               "chromium_visible_window_count": count,
               "real_page_pixels_inspected": False}
-    if mapped and state == "WAITING_FOR_HUMAN":
-        verdict = "CHROMIUM_WINDOW_MAPPED_LOGIN_NAVIGATION_COMPLETE_PIXELS_UNVERIFIED"
+    if mapped and state_stable and final_state == "WAITING_FOR_HUMAN":
+        verdict = "CHROMIUM_WINDOW_MAPPED_OWNER_READY_URL_UNVERIFIED"
     elif mapped:
         verdict = "CHROMIUM_WINDOW_MAPPED_LOGIN_STATE_UNCONFIRMED"
-    elif state == "WAITING_FOR_HUMAN":
-        verdict = "LOGIN_NAVIGATION_COMPLETE_X11_WINDOW_UNCONFIRMED"
+    elif state_stable and final_state == "WAITING_FOR_HUMAN":
+        verdict = "OWNER_READY_X11_WINDOW_UNCONFIRMED"
     else:
         verdict = "HOLD_BROWSER_SCREEN_NOT_CONFIRMED"
     return verdict, fields
 
 
+def wait_for_window() -> tuple[str, dict[str, object]]:
+    global DEADLINE
+    DEADLINE = time.monotonic() + WAIT_SECONDS
+    try:
+        for attempt in range(11):
+            verdict, fields = inspect()
+            if verdict == "CHROMIUM_WINDOW_MAPPED_OWNER_READY_URL_UNVERIFIED":
+                return verdict, fields
+            remaining = DEADLINE - time.monotonic()
+            if remaining <= 0 or attempt == 10:
+                return verdict, fields
+            time.sleep(min(2, remaining))
+    finally:
+        DEADLINE = None
+
+
 def main() -> int:
     try:
-        verdict, fields = inspect()
+        verdict, fields = wait_for_window()
         emit(verdict, **fields)
-        return 0 if verdict.startswith("CHROMIUM_WINDOW_MAPPED_LOGIN_NAVIGATION") else 2
+        return 0 if verdict == "CHROMIUM_WINDOW_MAPPED_OWNER_READY_URL_UNVERIFIED" else 2
     except Hold as e:
         emit(str(e))
         return 2
     except Exception:
-        # Never expose raw X11/HTTP errors which may embed window titles.
         emit("HOLD_INSPECTION_UNKNOWN")
         return 2
 
