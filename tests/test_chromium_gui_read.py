@@ -66,7 +66,7 @@ class GuiProofTests(unittest.TestCase):
     def test_no_chromium_does_not_pass(self):
         with patch.object(m,"gate"),patch.object(m,"owner_status",return_value="WAITING_FOR_HUMAN"),patch.object(m,"windows",return_value=[]):
             verdict,fields=m.inspect()
-        self.assertEqual(verdict,"LOGIN_NAVIGATION_COMPLETE_X11_WINDOW_UNCONFIRMED")
+        self.assertEqual(verdict,"OWNER_READY_X11_WINDOW_UNCONFIRMED")
         self.assertFalse(fields["real_page_pixels_inspected"])
 
     def test_chromium_mapped_and_status(self):
@@ -75,7 +75,7 @@ class GuiProofTests(unittest.TestCase):
             'Map State: IsViewable\nWidth: 900\nHeight: 700',
         ]),patch.object(m,"owned_chromium",return_value=True):
             verdict,fields=m.inspect()
-        self.assertEqual(verdict,"CHROMIUM_WINDOW_MAPPED_LOGIN_NAVIGATION_COMPLETE_PIXELS_UNVERIFIED")
+        self.assertEqual(verdict,"CHROMIUM_WINDOW_MAPPED_OWNER_READY_URL_UNVERIFIED")
         self.assertTrue(fields["chromium_pid_owner_verified"])
         self.assertFalse(fields["real_page_pixels_inspected"])
 
@@ -91,16 +91,52 @@ class GuiProofTests(unittest.TestCase):
         with patch.object(m,"gate"),patch.object(m,"owner_status",return_value="WAITING_FOR_HUMAN"),patch.object(m,"windows",return_value=["0x12"]),patch.object(m,"run_cmd",return_value='WM_CLASS(STRING) = "chromium"\n'):
             verdict,fields=m.inspect()
         self.assertFalse(fields["chromium_pid_owner_verified"])
-        self.assertEqual(verdict,"LOGIN_NAVIGATION_COMPLETE_X11_WINDOW_UNCONFIRMED")
+        self.assertEqual(verdict,"OWNER_READY_X11_WINDOW_UNCONFIRMED")
 
     def test_print_only_fixed_allowlist(self):
         out=io.StringIO()
         with contextlib.redirect_stdout(out):
-            m.emit("CHROMIUM_WINDOW_MAPPED_LOGIN_NAVIGATION_COMPLETE_PIXELS_UNVERIFIED",owner_status="WAITING_FOR_HUMAN")
+            m.emit("CHROMIUM_WINDOW_MAPPED_OWNER_READY_URL_UNVERIFIED",owner_status="WAITING_FOR_HUMAN")
         result=json.loads(out.getvalue())
         self.assertFalse(result["secret_exposed"])
         self.assertEqual(result["screenshot_export_count"],0)
         self.assertNotIn("nonce",out.getvalue())
+
+class RegressionTests(unittest.TestCase):
+    def test_empty_client_list_uses_tree_without_title_ids(self):
+        with patch.object(m.shutil, "which", return_value="tool"), patch.object(m, "run_cmd", side_effect=["_NET_CLIENT_LIST: no such atom", '  0x12 "private 0x99"\n  0x13 name\n']) as cmd:
+            self.assertEqual(m.windows(), ["0x12", "0x13"])
+            self.assertEqual(cmd.call_args.args[0], ["xwininfo", "-root", "-tree"])
+
+    def test_existing_list_does_not_read_tree(self):
+        with patch.object(m.shutil, "which", return_value="tool"), patch.object(m, "run_cmd", return_value="_NET_CLIENT_LIST(WINDOW): 0x12") as cmd:
+            self.assertEqual(m.windows(), ["0x12"])
+            self.assertEqual(cmd.call_count, 1)
+
+    def test_tree_is_bounded(self):
+        tree = "\n".join(f"  {hex(i)} private" for i in range(1, 300))
+        with patch.object(m.shutil, "which", return_value="tool"), patch.object(m, "run_cmd", side_effect=["", tree]):
+            self.assertEqual(len(m.windows()), m.MAX_WINDOWS)
+
+    def test_changed_owner_state_cannot_pass(self):
+        with patch.object(m,"gate"), patch.object(m,"owner_status",side_effect=["WAITING_FOR_HUMAN","STOPPED_NO_AUTH_ASSERTION"]), patch.object(m,"windows",return_value=["0x12"]), patch.object(m,"run_cmd",side_effect=['WM_CLASS(STRING) = "chromium"\n_NET_WM_PID(CARDINAL) = 1234\n', 'Map State: IsViewable\nWidth: 900\nHeight: 700']), patch.object(m,"owned_chromium",return_value=True):
+            verdict, fields=m.inspect()
+        self.assertNotEqual(verdict, "CHROMIUM_WINDOW_MAPPED_OWNER_READY_URL_UNVERIFIED")
+        self.assertFalse(fields["owner_state_stable"])
+        self.assertEqual(fields["crowdworks_url_arrival"], "UNVERIFIED")
+
+    def test_bounded_wait_reobserves(self):
+        result=("CHROMIUM_WINDOW_MAPPED_OWNER_READY_URL_UNVERIFIED", {"url_observed":False})
+        with patch.object(m,"inspect",side_effect=[("HOLD_BROWSER_SCREEN_NOT_CONFIRMED",{}),result]) as inspect, patch.object(m.time,"sleep"):
+            self.assertEqual(m.wait_for_window(),result)
+            self.assertEqual(inspect.call_count,2)
+        self.assertIsNone(m.DEADLINE)
+
+    def test_wait_has_attempt_limit_and_no_url_claim(self):
+        result=("HOLD_BROWSER_SCREEN_NOT_CONFIRMED", {"crowdworks_url_arrival":"UNVERIFIED"})
+        with patch.object(m,"inspect",return_value=result) as inspect, patch.object(m.time,"sleep"):
+            self.assertEqual(m.wait_for_window(),result)
+            self.assertEqual(inspect.call_count,11)
 
 if __name__=="__main__":
     unittest.main()
