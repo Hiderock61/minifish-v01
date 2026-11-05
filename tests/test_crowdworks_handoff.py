@@ -55,8 +55,10 @@ def _wait_state(manager,allowed,seconds=3):
     until=time.monotonic()+seconds
     while time.monotonic()<until:
         val=manager.status()
-        if val["status"] in allowed and not val["busy"] if val["status"] not in ("WAITING_FOR_HUMAN",) else val["status"] in allowed:
-            return val
+        if val["status"] in allowed:
+            if not val["busy"] or val["status"] in (
+                    "WAITING_FOR_HUMAN", "SESSION_REOPENED_LOGIN_NOT_VERIFIED"):
+                return val
         time.sleep(.02)
     raise AssertionError("G1_OWNER_STATE_TIMEOUT:"+str(manager.status()))
 
@@ -74,6 +76,9 @@ class FakeBrowser:
     class Page:
         def __init__(self):
             self.url = "about:blank"
+        def on(self,*args): pass
+        def is_closed(self): return False
+        def wait_for_timeout(self,milliseconds): time.sleep(.01)
         def goto(self,url,**kwargs):
             self.url=url
             return type("Resp",(),{"status":200})()
@@ -113,7 +118,10 @@ def test_user_manually_finishes_save_without_auto_login(monkeypatch):
     assert fake.count==1
     manager.launch(check_saved=True)
     assert _wait_state(manager,{"SESSION_REOPENED_LOGIN_NOT_VERIFIED"})["status"]=="SESSION_REOPENED_LOGIN_NOT_VERIFIED"
-    assert fake.count==2
+    assert fake.count==1
+    manager.cancel()
+    _wait_state(manager,{"STOPPED_NO_AUTH_ASSERTION"})
+    assert fake.count==1
 
 
 def test_stop_does_not_save_session(monkeypatch):
