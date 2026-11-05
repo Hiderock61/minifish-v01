@@ -29,6 +29,7 @@ def test_launcher_protects_full_startup_before_listener_check():
     assert script.index('write_stage STARTING_NOVNC') < script.index('nohup "${proxies[0]}"')
     assert script.index('write_stage STARTING_CONTROLLER') < script.index('uvicorn g1b_mock_app:app')
     assert "G1B_BLOCKED_ALREADY_STARTING" in script
+    assert '"$$" "$1"' in script
     assert subprocess.run(["bash", "-n", str(ROOT / "start_g1b_mock.sh")], check=False).returncode == 0
     assert subprocess.run(["bash", "-n", str(ROOT / "start_all.sh")], check=False).returncode == 0
 

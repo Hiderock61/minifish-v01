@@ -11,6 +11,7 @@ import os
 import stat
 from pathlib import Path
 from threading import Event, Lock, Thread
+from time import monotonic
 from urllib.parse import urlsplit
 from cryptography.fernet import Fernet
 
@@ -84,8 +85,14 @@ def _secret_vault() -> EncryptedSessionVault:
     return EncryptedSessionVault(root / "crowdworks.vault", key)
 
 
+STOP_REASONS = frozenset(("UNSPECIFIED", "OWNER_CANCELLED", "WAIT_TIMEOUT",
+    "BROWSER_CLOSED", "URL_NOT_ALLOWED", "HTTP_NO_RESPONSE", "HTTP_401",
+    "HTTP_403", "HTTP_429", "HTTP_ERROR", "LOGIN_PAGE_NOT_FINISHED"))
+
+
 class _StopWithoutSaving(Exception):
-    pass
+    def __init__(self, reason="UNSPECIFIED"):
+        super().__init__(reason if reason in STOP_REASONS else "UNSPECIFIED")
 
 
 class OwnerLoginHandoff:
@@ -95,6 +102,9 @@ class OwnerLoginHandoff:
         self._finish = Event()
         self._cancel = Event()
         self._status = "LOGIN_NOT_STARTED"
+        self._stop_reason = "NONE"
+        self._navigation_http = 0
+        self._navigation_allowed = False
 
     def status(self) -> dict[str, object]:
         with self._lock:
@@ -103,6 +113,9 @@ class OwnerLoginHandoff:
                 "site": SITE,
                 "status": self._status,
                 "busy": busy,
+                "stop_reason": self._stop_reason,
+                "navigation_http": self._navigation_http,
+                "navigation_url_allowed": self._navigation_allowed,
                 "credentials_collected_by_minifish": False,
                 "external_submission_by_minifish": False,
                 "login_verified": False,
@@ -121,6 +134,9 @@ class OwnerLoginHandoff:
             self._finish = Event()
             self._cancel = Event()
             self._status = "OPENING_PRIVATE_BROWSER"
+            self._stop_reason = "NONE"
+            self._navigation_http = 0
+            self._navigation_allowed = False
             self._worker = Thread(
                 target=self._run, args=(check_saved, self._finish, self._cancel), daemon=True
             )
@@ -128,8 +144,15 @@ class OwnerLoginHandoff:
 
     def finish(self) -> None:
         with self._lock:
-            if self._worker is None or not self._worker.is_alive() or self._status != "WAITING_FOR_HUMAN":
+            # A repeated request after acceptance must not save twice or
+            # turn a completed save into a misleading HTTP conflict.
+            if self._status in ("SAVING_SESSION", "SESSION_SAVED_LOGIN_UNVERIFIED"):
+                return
+            if (self._worker is None or not self._worker.is_alive()
+                    or self._status not in ("WAITING_FOR_HUMAN",
+                                           "SESSION_REOPENED_LOGIN_NOT_VERIFIED")):
                 raise ValueError("LOGIN_NOT_READY")
+            self._status = "SAVING_SESSION"
             self._finish.set()
 
     def cancel(self) -> None:
@@ -147,6 +170,52 @@ class OwnerLoginHandoff:
             vault.path.unlink()
         self._set("LOCAL_SESSION_REVOKED")
 
+    def _record_navigation(self, status, url):
+        with self._lock:
+            self._navigation_http = status if isinstance(status, int) else 0
+            self._navigation_allowed = _approved_url(url)
+
+    def _record_response(self, response, page):
+        request = response.request
+        if request.is_navigation_request() and request.frame == page.main_frame:
+            self._record_navigation(response.status, response.url)
+
+    def _wait_for_owner(self, page, finish, cancel):
+        deadline = monotonic() + WAIT_SECONDS
+        while not finish.is_set():
+            if cancel.is_set():
+                raise _StopWithoutSaving("OWNER_CANCELLED")
+            if page.is_closed():
+                raise _StopWithoutSaving("BROWSER_CLOSED")
+            if monotonic() >= deadline:
+                raise _StopWithoutSaving("WAIT_TIMEOUT")
+            # Playwright's wait pumps route/response callbacks from manual UI
+            # input. threading.Event.wait blocks this worker's event dispatch.
+            try:
+                page.wait_for_timeout(200)
+            except Exception:
+                if page.is_closed():
+                    raise _StopWithoutSaving("BROWSER_CLOSED") from None
+                raise
+            if not _approved_url(page.url):
+                raise _StopWithoutSaving("URL_NOT_ALLOWED")
+            with self._lock:
+                status = self._navigation_http
+            self._check_http(status)
+        if cancel.is_set():
+            raise _StopWithoutSaving("OWNER_CANCELLED")
+        if monotonic() >= deadline:
+            raise _StopWithoutSaving("WAIT_TIMEOUT")
+
+    @staticmethod
+    def _check_http(status):
+        if not status:
+            raise _StopWithoutSaving("HTTP_NO_RESPONSE")
+        if status in (401, 403, 429):
+            raise _StopWithoutSaving("HTTP_" + str(status))
+        if status >= 400:
+            raise _StopWithoutSaving("HTTP_ERROR")
+
     def _run(self, check_saved: bool, finish: Event, cancel: Event) -> None:
         stage = "PRIVATE_BROWSER"
         try:
@@ -160,40 +229,38 @@ class OwnerLoginHandoff:
                 assert browser.context is not None and browser.page is not None
                 browser.context.route("**/*", _browser_route)
                 stage = "LOGIN_PAGE"
+                browser.page.on("response", lambda response:
+                    self._record_response(response, browser.page))
                 response = browser.page.goto(
                     HOME_URL if check_saved else LOGIN_URL,
                     timeout=20000, wait_until="domcontentloaded"
                 )
+                self._record_navigation(response.status if response else 0, browser.current_url)
                 if not _approved_url(browser.current_url):
-                    raise _StopWithoutSaving()
-                if response is None or response.status in (401, 403, 429) or response.status >= 400:
-                    raise _StopWithoutSaving()
+                    raise _StopWithoutSaving("URL_NOT_ALLOWED")
+                self._check_http(response.status if response else 0)
                 if check_saved:
                     # Page navigation works; authentication still requires
                     # owner-side verification of the actual account screen.
                     self._set("SESSION_REOPENED_LOGIN_NOT_VERIFIED")
-                    return
-                self._set("WAITING_FOR_HUMAN")
+                else:
+                    self._set("WAITING_FOR_HUMAN")
                 # Browser GUI remains interactive; no Playwright auto clicks.
                 # Worker never reads the password field or submits login.
-                from time import monotonic
-                deadline = monotonic() + WAIT_SECONDS
-                while not finish.wait(0.2):
-                    if cancel.is_set() or monotonic() >= deadline:
-                        raise _StopWithoutSaving()
-                if cancel.is_set():
-                    raise _StopWithoutSaving()
+                self._wait_for_owner(browser.page, finish, cancel)
                 stage = "SESSION_SAVE"
                 current = urlsplit(browser.current_url)
                 if not _approved_url(browser.current_url) or (
                     current.path.rstrip("/") in ("/login", "/users/sign_in")
                 ):
-                    raise _StopWithoutSaving()
+                    raise _StopWithoutSaving("LOGIN_PAGE_NOT_FINISHED")
                 # Save only after owner pressed "ログイン完了" and navigated
                 # away from the login path. Still not proof of login.
                 # PlaywrightBrowser.__exit__ encrypts the state.
             self._set("SESSION_SAVED_LOGIN_UNVERIFIED")
-        except _StopWithoutSaving:
+        except _StopWithoutSaving as stopped:
+            with self._lock:
+                self._stop_reason = str(stopped)
             self._set("STOPPED_NO_AUTH_ASSERTION")
         except Exception:
             # No exception text or page contents returned to the dashboard.

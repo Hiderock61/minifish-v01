@@ -426,6 +426,7 @@ if(codespace) desktop.href="https://"+host.replace(/-8002\.app\.github\.dev$/,"-
 else if(local) desktop.href="http://"+host+":6081/vnc.html";
 else {desktop.removeAttribute("href");desktop.textContent="プライベート画面が見つかりません";}
 const actionResult=document.getElementById("actionResult");
+let ownerActionPending=false;
 let ownerActionNonce="";
 let ownerProbeState="UNKNOWN";
 let ownerProbedNonce="";
@@ -488,7 +489,11 @@ async function refresh(){
   const verified=ownerProbeState==="PASS";
   document.getElementById("open").disabled=d.busy||!verified;
   document.getElementById("reopen").disabled=d.busy||!verified;
-  document.getElementById("finish").disabled=!d.busy||!verified;
+  document.getElementById("finish").disabled=!d.busy||!verified||ownerActionPending||
+    !["WAITING_FOR_HUMAN","SESSION_REOPENED_LOGIN_NOT_VERIFIED"].includes(d.status);
+  if(d.status==="SAVING_SESSION") actionResult.textContent="暗号化保存中です。完了を待ってください。";
+  if(d.status==="SESSION_SAVED_LOGIN_UNVERIFIED")
+    actionResult.textContent="暗号化保存が完了し、専用ブラウザを閉じました。復元は「保存した画面を開き直す」で確認できます。";
   document.getElementById("stop").disabled=!d.busy||!verified;
  }catch(e){
   ownerActionNonce="";
@@ -500,10 +505,13 @@ async function refresh(){
  }
 }
 async function run(name){
+ if(ownerActionPending)return;
  if(!ownerActionNonce||ownerProbeState!=="PASS"){
   actionResult.textContent="操作停止：自動通信検査を通過していません。";
   return;
  }
+ ownerActionPending=true;
+ document.getElementById("finish").disabled=true;
  try{
   const res=await fetch("/g1/owner/"+name,{
    method:"POST",headers,credentials:"same-origin",cache:"no-store",
@@ -519,6 +527,9 @@ async function run(name){
   await refresh();
  }catch(e){
   actionResult.textContent="操作の通信に失敗しました。連打せずに停止してください。";
+  await refresh();
+ }finally{
+  ownerActionPending=false;
   await refresh();
  }
 }

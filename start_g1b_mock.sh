@@ -47,7 +47,7 @@ write_stage() {
   local temp
   temp="$(mktemp "$private_dir/.runtime-stage-XXXXXXXX")"
   chmod 600 "$temp"
-  printf '%s %s\n' "$" "$1" >"$temp"
+  printf '%s %s\n' "$$" "$1" >"$temp"
   mv -f "$temp" "$private_dir/runtime.stage"
 }
 write_stage STARTING_VNC
@@ -84,15 +84,22 @@ if p.exists():
     meta = p.stat()
     if not stat.S_ISREG(meta.st_mode) or stat.S_IMODE(meta.st_mode) != 0o600:
         raise SystemExit("G1B_PASSWORD_PERMISSIONS_UNSAFE")
-    value = p.read_text(encoding="ascii")
-    if len(value) != 8 or not value.isalnum():
-        raise SystemExit("G1B_PASSWORD_INVALID")
-else:
-    alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789"
-    value = "".join(secrets.choice(alphabet) for _ in range(8))
-    fd = os.open(p, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    if not stat.S_ISREG(meta.st_mode) or meta.st_uid != os.geteuid():
+        raise SystemExit("G1B_PASSWORD_PERMISSIONS_UNSAFE")
+# Every runtime launch rotates the exposed screen-sharing secret. Never read
+# the previous plaintext value. Atomic replacement stays inside private_dir.
+alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789"
+value = "".join(secrets.choice(alphabet) for _ in range(8))
+import tempfile
+fd, temporary = tempfile.mkstemp(prefix=".vnc-secret-", dir=p.parent)
+try:
+    os.fchmod(fd, 0o600)
     with os.fdopen(fd, "w", encoding="ascii") as f:
         f.write(value)
+    os.replace(temporary, p)
+finally:
+    if os.path.exists(temporary):
+        os.unlink(temporary)
 PY
 
 if ! command -v vncpasswd >/dev/null || ! command -v tigervncserver >/dev/null; then
