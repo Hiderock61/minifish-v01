@@ -53,6 +53,7 @@ def main():
     if os.getenv("CODESPACE_NAME") != "accursed-apparition-6q7jwqq5965h4rpq":
         raise SystemExit("HOLD_WRONG_CODESPACE")
     sys.path.insert(0, str(ROOT))
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
     import minifish.crowdworks_handoff as owner
     import g1b_mock_app
     import uvicorn
