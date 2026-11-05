@@ -144,8 +144,15 @@ class OwnerLoginHandoff:
 
     def finish(self) -> None:
         with self._lock:
-            if self._worker is None or not self._worker.is_alive() or self._status != "WAITING_FOR_HUMAN":
+            # A repeated request after acceptance must not save twice or
+            # turn a completed save into a misleading HTTP conflict.
+            if self._status in ("SAVING_SESSION", "SESSION_SAVED_LOGIN_UNVERIFIED"):
+                return
+            if (self._worker is None or not self._worker.is_alive()
+                    or self._status not in ("WAITING_FOR_HUMAN",
+                                           "SESSION_REOPENED_LOGIN_NOT_VERIFIED")):
                 raise ValueError("LOGIN_NOT_READY")
+            self._status = "SAVING_SESSION"
             self._finish.set()
 
     def cancel(self) -> None:
@@ -229,8 +236,8 @@ class OwnerLoginHandoff:
                     # Page navigation works; authentication still requires
                     # owner-side verification of the actual account screen.
                     self._set("SESSION_REOPENED_LOGIN_NOT_VERIFIED")
-                    return
-                self._set("WAITING_FOR_HUMAN")
+                else:
+                    self._set("WAITING_FOR_HUMAN")
                 # Browser GUI remains interactive; no Playwright auto clicks.
                 # Worker never reads the password field or submits login.
                 self._wait_for_owner(browser.page, finish, cancel)
