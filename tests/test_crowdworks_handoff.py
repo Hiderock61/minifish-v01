@@ -74,6 +74,9 @@ class FakeBrowser:
     class Page:
         def __init__(self):
             self.url = "about:blank"
+        def on(self,*args): pass
+        def is_closed(self): return False
+        def wait_for_timeout(self,milliseconds): time.sleep(.01)
         def goto(self,url,**kwargs):
             self.url=url
             return type("Resp",(),{"status":200})()
