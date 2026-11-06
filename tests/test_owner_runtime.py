@@ -12,7 +12,7 @@ from minifish import owner_runtime
 
 
 def _req(*, origin=None, host="sample-8000.app.github.dev", header=None):
-    headers=[(b"host",host.encode())]
+    headers=[(b"host",host.encode()), (b"content-type",b"application/json")]
     if origin: headers.append((b"origin",origin.encode()))
     if header: headers.append((b"x-minifish-setup",header.encode()))
     return Request({
