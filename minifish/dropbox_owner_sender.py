@@ -17,7 +17,7 @@ import os
 import re
 import stat
 
-from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeout
+from playwright.sync_api import sync_playwright
 
 
 _PROBE_FILE = "minifish_owner_probe_20261107.txt"
@@ -90,10 +90,15 @@ def _can_route(url: str, method: str, *, local_port: int | None = None,
         if main_navigation:
             return (method == "GET" and host == "www.dropbox.com"
                     and bool(_REQUEST_PATH.fullmatch(p.path)))
-        if host in _ALLOWED_ASSET_HOSTS or host.endswith(".dropboxstatic.com"):
-            return method in ("GET", "POST", "PUT") and (
-                method == "GET" or host != "dropbox.com"
-            )
+        if host.endswith(".dropboxstatic.com"):
+            return method == "GET"
+        if host in _ALLOWED_ASSET_HOSTS:
+            if method == "GET":
+                return True
+            return (method in ("POST", "PUT")
+                    and host in ("www.dropbox.com",
+                                 "api.dropboxapi.com",
+                                 "content.dropboxapi.com"))
         return False
     except ValueError:
         return False
