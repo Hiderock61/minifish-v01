@@ -3,12 +3,46 @@
   "image": "mcr.microsoft.com/devcontainers/python:3.11",
   "postCreateCommand": "pip install -r requirements.txt && python -m playwright install --with-deps chromium",
   "postStartCommand": "bash start_all.sh",
-  "forwardPorts": [8000],
+  "forwardPorts": [
+    8000,
+    8002,
+    6081
+  ],
   "portsAttributes": {
+    "5901": {
+      "label": "Internal desktop/VNC port (not forwarded)",
+      "onAutoForward": "ignore",
+      "visibility": "private"
+    },
+    "5911": {
+      "label": "Internal desktop/VNC port (not forwarded)",
+      "onAutoForward": "ignore",
+      "visibility": "private"
+    },
+    "6080": {
+      "label": "Internal desktop/VNC port (not forwarded)",
+      "onAutoForward": "ignore",
+      "visibility": "private"
+    },
+    "6081": {
+      "label": "MiniFish G1b private mock desktop (random password)",
+      "onAutoForward": "notify",
+      "visibility": "private"
+    },
     "8000": {
       "label": "MiniFish Control",
       "onAutoForward": "openBrowser",
       "visibility": "private"
+    },
+    "8002": {
+      "label": "MiniFish MOCK G1b controls",
+      "onAutoForward": "notify",
+      "visibility": "private"
+    }
+  },
+  "features": {
+    "ghcr.io/devcontainers/features/desktop-lite:1": {
+      "webPort": "6080"
     }
   }
 }

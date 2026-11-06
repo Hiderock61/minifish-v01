@@ -7,6 +7,7 @@ import time
 
 from .models import Action, Event, LedgerEntry, RunState, now_iso
 from .browser import PlaywrightBrowser
+from .session_vault import EncryptedSessionVault
 from .planner import Planner
 from .guard import SupervisorGate
 
@@ -23,6 +24,7 @@ class MiniFishRunner:
         headless: bool = True,
         executable_path: str | None = None,
         profile_path: str | None = None,
+        session_vault: EncryptedSessionVault | None = None,
         capture_dir: str | None = None,
         log_path: str | None = None,
         on_event: Callable[[RunState, Event], None] | None = None,
@@ -34,6 +36,7 @@ class MiniFishRunner:
         self.headless = headless
         self.executable_path = executable_path
         self.profile_path = profile_path
+        self.session_vault = session_vault
         self.capture_dir = capture_dir
         self.log_path = Path(log_path) if log_path else None
         self.on_event = on_event
@@ -63,6 +66,7 @@ class MiniFishRunner:
                 headless=self.headless,
                 executable_path=self.executable_path,
                 profile_path=self.profile_path,
+                session_vault=self.session_vault,
                 capture_dir=self.capture_dir,
             ) as browser:
                 if start_html is not None:

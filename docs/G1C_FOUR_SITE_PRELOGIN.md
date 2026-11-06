@@ -1,0 +1,54 @@
+# 🐟 G1c｜ログインしない日でも進める4サイト準備
+
+## 今回のゴール
+ランサーズ・ココナラ・クラウドワークス・note を4つの「後でログイン」対象に設定し、公式ログイン入口だけを確認する。今は本人のパスワード、2FA、ログインを一切要求しない。
+
+## 正規の入口
+| サイト | ログイン画面 | 現在 |
+| --- | --- | --- |
+| ランサーズ | https://www.lancers.jp/user/login | 入口登録、ログイン待機 |
+| ココナラ | https://coconala.com/login | 入口登録、ログイン待機 |
+| クラウドワークス | https://crowdworks.jp/login | 入口登録、ログイン待機 |
+| note | https://note.com/login | 入口登録、ログイン待機 |
+
+- 現時点では公開URLの所在確認済み。実際の本人アカウントがMiniFishから使えると証明したわけではない。
+- クラウドワークスは通常の公開アクセスでJavaScriptやブラウザ制限によるエラーを示したため、ログイン欄が表示できるかは未確定。アクセス制限や利用規約に反して突破しない。
+- ランサーズもJavaScriptや2要素認証が必要な場合がある。本人操作で対応する。
+- 既存TinyFishなどに保存されている可能性があるログイン情報は読まない・コピーしない・GitHub/Notionへ記録しない。
+
+## MiniFishの準備装置
+- 新規部品 minifish/prelogin.py は4サイトの完全一致したURLだけをREAD専用で開く。ブラウザごとに新しくクッキー無しで起動し、GET/HEAD以外を止める。
+- ID・パスワード・Cookieの収集や入力、ログインクリック、フォーム送信、保存、公開は行わない。
+- 画面状態を LOGIN_FIELDS_VISIBLE / LOGIN_PAGE_ONLY / BLOCKED で返す。前二者もログイン成功ではない。HTMLや入力値をGitHubのログへ出さない。
+- tests/test_prelogin_noauth_fill_e2e.py では実Chromiumを使い架空の自己紹介欄へ日本語入力→読み戻し。外部サイトの書込と送信は0件。
+- OpenAI API課金は0。GitHub Actionsには利用枠消費の可能性がある。Codespacesの新規起動はしない。
+
+## 現在の完成線と次の行動
+- 今回のYES候補：4サイトの入口を固定、READ専用でログイン画面を観測、架空の日本語入力と読戻しを実証。
+- 今回のNO/HOLD：本人アカウントへのログイン、iPhone Safariでの専用画面実操作、プロフィール保存、応募、note投稿、長期常駐。
+- 次の本人操作は、好きな時に1サイトだけ選んでMiniFishの本人専用ブラウザからログインすること。ただしCodespaces Private画面の実機検査・セッション保護は事前に必要で、今回完成と混同しない。
+
+## ログイン以外の改善（優先順）
+1. 4サイト切替スイッチとログイン待機状態の司令塔返却。
+2. 自己紹介を入力→保存前プレビュー→本人承認後1回だけ保存する部品。
+3. 入力欄重複、ページ変更、403/429、ログイン切れは推測操作をせずSTOP。
+4. Codespaces費用・Privateポート・認証鍵失効を確認する実機手順。
+
+無断ログイン、CAPTCHA回避、第三者投稿、応募、購入は行わない。
+
+## 2026-10-16追加｜ログインなしで「文字を書いて保存」まで拡張
+
+- 実Webのログイン入口観測は[GitHub Actions RUN 38863964753](https://github.com/Hiderock61/minifish-v01/actions/runs/38863964753)で再実行。
+- 今回の観測値：`lancers=BLOCKED(G1_LOGIN_HTTP_4XX)`、`coconala=BLOCKED(G1_LOGIN_HTTP_403)`、`crowdworks=LOGIN_FIELDS_VISIBLE`、`note=LOGIN_PAGE_ONLY`。CloudWorksだけログイン欄まで到達。**他3件をログイン直前まで完走したとは主張しない。**
+- 追加装置 `minifish/form_draft.py` は、入力欄が1つだけと確認→日本語入力→値を突合→人間の保存承認待ち→1回だけ保存→別GETで読み戻し→保存済を検品する。違うURL・曖昧な入力欄・途中内容変更・重複保存はSTOP。曖昧な成功で再送しない。
+- `tests/test_noauth_local_save_e2e.py` に **実Chromiumとローカルの架空HTTPサーバー**を使う保存試験を追加。ログイン0、外部サイトへ文章の送信0、独立の再読込を含み14/14 PASS。保存したのはこの架空サーバーだけ。
+- 本人プロフィールの保存は**一切行っていない**。書込み機能を実サイトへ配線するのは本人が後日ログインし、画面の構造と操作許可を確認したときだけ。
+
+**NEXT**：本人が気の向いた日に1サイトだけ選び、PRIVATEブラウザの実機動作／ログインを確認する。それまではログイン操作を要求しない。ログイン情報のコピーやTinyFishのVaultからの抽出もしない。
+
+## 2026-10-16｜本物の公開サイトで日本語以外の文字入力がPASS
+- 新装置：`minifish/live_public_input.py`。既存公開3サイトのうちPython公式ドキュメントの `https://docs.python.org/3/` をREAD、同じサイトの検索ページ `https://docs.python.org/3/search.html` の検索欄に `MiniFish browser input check` を入力、画面から入力値を読み返す。
+- **実行証拠**：[Actions RUN 38866241663](https://github.com/Hiderock61/minifish-v01/actions/runs/38866241663) は `completed/success`、`MINIFISH_REAL_PUBLIC_INPUT=PASS`、`observed_public_page=true`、`typing_verified=true`。ブラウザが入力後の値の一致を確認。
+- 安全範囲：Python公式ホスト・`/3/` 以下のGET/HEADだけ許可し、クエリ付き・外部ホスト・POSTなどの通信はブロック。検索ボタン押下、Enter入力、フォーム提出、書込み、ログイン、OpenAI API呼出はいずれもなし。
+- **到達点**：GitHub Actionsからの「実サイトREAD→表示中の入力欄へfill→入力値照合」はPROVEN。プロフィール文章の実サービス保存・ログイン後の編集、ChatGPTからのこの新しい入力モードの1発話起動は、まだ未実装／未実証。
+- 次工程は、この安全な公開Web入力モードを**ChatGPT→司令塔→GitHub Actions→結果回収**の既存経路へ接続すること。既存のREAD ONLYモードは変更せず、登録外のURLや入力値を受け付けない。

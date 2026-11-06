@@ -105,3 +105,9 @@ MiniFishを作る目的はTinyFishの完全コピーではなく、Agentの **PL
 ChatGPTのGitHub連携 → Issue指令 → GitHub Actions → MiniFish監督付きChromium → 結果コメントの実運用経路です。認証不要の登録済み公開ページだけを読みます。OpenAI API課金、Webサイトへの投稿、ログイン操作は行いません。
 
 iPhoneだけの使用方法・許可サイト・受入条件・未実装機能は [司令塔操縦ガイド](docs/COMMAND_CENTER_V1.md) に明記。
+
+## 🔐 G1｜ログイン保持の土台（模擬サイト段階）
+
+従来の平文セッション自動保存をcloud/Issue Workerで止め、既存PlaywrightBrowserへ暗号化Session Vaultを追加しました。模擬サイトの「ログイン→ブラウザ破棄→新ブラウザでログイン保持」を専用CIで受入検査します。本物のランサーズ／ココナラ等のログインはまだ許可・実証していません。
+
+工程、秘密・費用の境界、次の本人ログイン入口は [G1 セッション保持・模擬ログイン受入票](docs/G1_SESSION_MOCK.md) を参照。OpenAI API不要、実サイトへの外部書込みなし。
