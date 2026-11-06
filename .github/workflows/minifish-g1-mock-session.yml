@@ -9,7 +9,7 @@ permissions:
 jobs:
   mock-session-e2e:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -18,7 +18,9 @@ jobs:
       - name: Install existing runtime + encryption dependency
         run: |
           python -m pip install -r requirements.txt
-          python -m playwright install --with-deps chromium
+          # Avoid slow apt font downloads on the hosted Ubuntu runner.
+          # The E2E test below checks that Chromium actually launches.
+          python -m playwright install chromium
       - name: Verify encrypted vault and local-only simulated login persistence
         env:
           MINIFISH_G1_E2E: '1'
