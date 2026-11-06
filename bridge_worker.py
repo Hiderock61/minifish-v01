@@ -56,6 +56,18 @@ def run_job(issue: dict) -> dict:
             "owner_login_verified": False,
         }
 
+    if mode == "owner_read_mock":
+        # TEST-ONLY: never dispatch this branch from a running Codespace
+        # or a real GitHub Issue. There is NO production owner-read command.
+        if (os.getenv("MINIFISH_G1_PRIVATE_MOCK_E2E") != "1"
+                or "PYTEST_CURRENT_TEST" not in os.environ):
+            raise ValueError("SYNTHETIC_OWNER_READ_DISABLED")
+        if set(payload) != {"mode", "goal"} or goal != "READ_SYNTHETIC_JOB_TITLES":
+            raise ValueError("SYNTHETIC_OWNER_READ_CONTRACT_BLOCKED")
+        from minifish.owner_read_mock import run_mock_read
+        # Return safe receipt only. No fake title, fake cookie or page body.
+        return {"run_id": f"issue_{issue_no}", **run_mock_read().public_receipt()}
+
     if mode == "read_only":
         # One-shot GitHub Actions route. No OpenAIPlanner, login, cookies or clicks.
         from minifish.readonly_probe import run_public_readonly

@@ -21,6 +21,7 @@ class PlaywrightBrowser:
         profile_path: str | None = None,
         capture_dir: str | None = None,
         session_vault: EncryptedSessionVault | None = None,
+        save_session_on_exit: bool = True,
     ) -> None:
         self.headless = headless
         self.executable_path = executable_path or os.getenv("MINIFISH_CHROMIUM_PATH")
@@ -28,6 +29,7 @@ class PlaywrightBrowser:
             raise ValueError("SESSION_VAULT_AND_PLAINTEXT_PROFILE_CONFLICT")
         self.profile_path = Path(profile_path) if profile_path else None
         self.session_vault = session_vault
+        self.save_session_on_exit = save_session_on_exit
         self.capture_dir = Path(capture_dir) if capture_dir else None
         if self.capture_dir:
             self.capture_dir.mkdir(parents=True, exist_ok=True)
@@ -66,7 +68,7 @@ class PlaywrightBrowser:
 
     def __exit__(self, exc_type, exc, tb) -> None:
         try:
-            if self.context and exc_type is None:
+            if self.context and exc_type is None and self.save_session_on_exit:
                 if self.session_vault:
                     self.session_vault.save(self.context.storage_state())
                 elif self.profile_path:
