@@ -19,7 +19,6 @@ import stat
 
 from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeout
 
-from .dropbox_upload_mock import FILE_BODY
 
 _PROBE_FILE = "minifish_owner_probe_20261107.txt"
 _PROBE_BODY = b"MINIFISH_OWNER_AUTO_SYNTHETIC_ONLY\nRESULT=MOCK_ONLY\n"
@@ -240,7 +239,7 @@ def run_owner_probe(*, local_test_url: str | None = None,
                 finally:
                     if browser is not None:
                         browser.close()
-    except (PlaywrightTimeout, Exception):
+    except Exception:
         # Fail closed with no URL/cookie/page/exception text printed or logged.
         status = "STOP_BROWSER_OR_NETWORK"
     return OwnerUploadReceipt(status, attempted, test_mode)
