@@ -8,6 +8,7 @@ import os
 import uuid
 import re
 import secrets
+import logging
 
 from minifish.owner_runtime import diagnose as owner_diagnose, start_owner_desktop
 
@@ -130,6 +131,7 @@ CONTROL_HTML = r"""
     <a id="ownerLoginLink" href="#" style="display:block;padding:14px;border-radius:12px;background:#87c3ff;color:#071025;font-weight:850;text-align:center;text-decoration:none">MiniFishでログインする</a>
     <p id="ownerLoginNotice" class="muted">起動状態を自動で確認しています…</p>
     <button id="ownerBoot" type="button" hidden style="background:#ffcf8c;color:#071025;width:100%">MiniFishの画面を起動する</button>
+    <p id="ownerStartDiagnostic" aria-live="polite"></p>
   </section>
 
   <section class="card">
@@ -188,6 +190,7 @@ function ownerState(state) {
   const messages={
     READY:"ログイン用の画面と表示装置が応答しています。Privateで開けることを確認してからログインします。",
     OFFLINE:"まだ起動していません。下のボタンで起動できます。",
+    STOPPED:"まだ起動していません。下のボタンで起動できます。",
     STARTING:"いま起動しています。しばらくお待ちください。",
     PARTIAL_NEEDS_INSPECTION:"画面か操作装置の片方が応答しません。ログインせず工務店で修理します。",
     CODESPACE_REQUIRED:"Codespacesのプライベート画面でのみ利用できます。",
@@ -249,6 +252,7 @@ ownerBoot.addEventListener("click",async () => {
     ownerState({status:"PRIVATE_OWNER_ACCESS_REJECTED",can_start:false});
     return;
   }
+  document.getElementById("ownerStartDiagnostic").textContent="";
   ownerBoot.disabled=true;
   ownerState({status:"STARTING",can_start:false});
   try {
@@ -257,9 +261,14 @@ ownerBoot.addEventListener("click",async () => {
       headers:{"Content-Type":"application/json"},
       body:JSON.stringify({nonce:ownerStartNonce})
     });
-    if(!response.ok) ownerState({
-      status:response.status===403?"PRIVATE_OWNER_ACCESS_REJECTED":"PRIVATE_OWNER_SERVER_ERROR"
-    });
+    if(!response.ok) {
+      const result=await response.json().catch(()=>({}));
+      const allowed=["PRIVATE_CODESPACE_REQUIRED","OWNER_START_PROOF_REQUIRED",
+        "OWNER_CROSS_SITE_REJECTED","OWNER_CROSS_ORIGIN_REJECTED","OWNER_JSON_REQUIRED"];
+      const code=allowed.includes(result.detail)?result.detail:"OWNER_START_REJECTED";
+      document.getElementById("ownerStartDiagnostic").textContent="起動停止コード: "+code;
+      ownerState({status:response.status===403?"PRIVATE_OWNER_ACCESS_REJECTED":"PRIVATE_OWNER_SERVER_ERROR"});
+    }
     else ownerState(await response.json());
   } catch (_) {ownerState({status:"PRIVATE_OWNER_CONNECTION_ERROR"});}
   ownerBoot.disabled=false;
@@ -643,18 +652,26 @@ def _private_owner_request(
     fetch_site = request.headers.get("sec-fetch-site", "")
     if fetch_site not in ("", "same-origin"):
         raise HTTPException(403, "OWNER_CROSS_SITE_REJECTED")
-    if origin:
-        from urllib.parse import urlsplit
-        parsed = urlsplit(origin)
-        host = (parsed.hostname or "").lower()
-        if not (
-            parsed.scheme == "https"
-            and bool(re.fullmatch(r"[a-z0-9-]+-8000\.app\.github\.dev", host))
-            and parsed.port is None
-            and not parsed.username and not parsed.password
-            and origin == "https://" + host
-        ):
-            raise HTTPException(403, "OWNER_CROSS_ORIGIN_REJECTED")
+    if request.headers.get("content-type", "").split(";", 1)[0].strip().lower() != "application/json":
+        raise HTTPException(403, "OWNER_JSON_REQUIRED")
+    expected_host = name + "-8000.app.github.dev"
+    # Observed PRIVATE Codespaces forwarding rewrites Origin to localhost,
+    # while retaining the original public authority in X-Forwarded-Host.
+    # Neither header authorizes a request: the process nonce above is required.
+    # The Chromebook path was observed with HTTPS on the loopback Origin.
+    # Require the matching upstream Host and original browser Referer there.
+    https_loopback = (
+        origin == "https://localhost:8000"
+        and request.headers.get("host") == "localhost:8000"
+        and request.headers.get("referer", "").startswith("https://" + expected_host + "/")
+    )
+    proxy_rewrite = (
+        (origin == "http://localhost:8000" or https_loopback)
+        and fetch_site == "same-origin"
+        and request.headers.get("x-forwarded-host", "") == expected_host
+    )
+    if origin and origin != "https://" + expected_host and not proxy_rewrite:
+        raise HTTPException(403, "OWNER_CROSS_ORIGIN_REJECTED")
 
 @app.get("/api/owner/diagnose")
 def owner_runtime_status(request: Request):
@@ -667,5 +684,12 @@ def owner_runtime_status(request: Request):
 
 @app.post("/api/owner/start")
 def owner_runtime_start(request: Request, proof: OwnerStartProof):
-    _private_owner_request(request, state_change=True, proof=proof.nonce)
+    try:
+        _private_owner_request(request, state_change=True, proof=proof.nonce)
+    except HTTPException as exc:
+        # Fixed codes only. Never log request headers, proof or payload.
+        logging.getLogger("uvicorn.error").warning(
+            "MINIFISH_OWNER_REJECT reason=%s", exc.detail)
+        return JSONResponse({"detail": exc.detail, "source": "minifish-owner"},
+            status_code=exc.status_code, headers={"Cache-Control": "no-store"})
     return JSONResponse(start_owner_desktop(), headers={"Cache-Control":"no-store"})
