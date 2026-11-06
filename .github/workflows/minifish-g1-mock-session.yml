@@ -30,4 +30,5 @@ jobs:
             tests/test_session_vault.py \
             tests/test_session_g1_e2e.py \
             tests/test_owner_read_mock_e2e.py \
-            tests/test_private_result_mailbox.py
+            tests/test_private_result_mailbox.py \
+            tests/test_dropbox_upload_mock.py
