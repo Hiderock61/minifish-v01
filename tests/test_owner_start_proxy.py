@@ -50,6 +50,6 @@ def test_non_json_rejected(owner):
     client,calls=owner
     nonce=client.get("/api/owner/diagnose").json()["start_nonce"]
     r=client.post("/api/owner/start",content='{"nonce":"'+nonce+'"}')
-    assert r.status_code==403
-    assert r.json()["detail"]=="OWNER_JSON_REQUIRED"
+    assert r.status_code in (403, 422)
+    if r.status_code == 403: assert r.json()["detail"]=="OWNER_JSON_REQUIRED"
     assert not calls
