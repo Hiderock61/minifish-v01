@@ -53,3 +53,29 @@ def test_non_json_rejected(owner):
     assert r.status_code in (403, 422)
     if r.status_code == 403: assert r.json()["detail"]=="OWNER_JSON_REQUIRED"
     assert not calls
+
+
+@pytest.mark.parametrize("overrides,valid_nonce,expected", [
+    ({}, True, 200),
+    ({"host": "evil.example"}, True, 403),
+    ({"referer": ""}, True, 403),
+    ({"referer": "https://sample-8000.app.github.dev.evil.example/"}, True, 403),
+    ({"x-forwarded-host": "other-8000.app.github.dev"}, True, 403),
+    ({"sec-fetch-site": "cross-site"}, True, 403),
+    ({"origin": "https://localhost:8001"}, True, 403),
+    ({}, False, 403),
+])
+def test_chromebook_https_loopback(owner, overrides, valid_nonce, expected):
+    client, calls = owner
+    nonce = client.get("/api/owner/diagnose").json()["start_nonce"]
+    headers = {
+        "origin": "https://localhost:8000",
+        "host": "localhost:8000",
+        "referer": "https://sample-8000.app.github.dev/",
+        "x-forwarded-host": "sample-8000.app.github.dev",
+        "sec-fetch-site": "same-origin",
+    }
+    response = client.post("/api/owner/start", headers=headers | overrides,
+                           json={"nonce": nonce if valid_nonce else "x" * 43})
+    assert response.status_code == expected
+    assert len(calls) == (expected == 200)

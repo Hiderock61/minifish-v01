@@ -658,8 +658,15 @@ def _private_owner_request(
     # Observed PRIVATE Codespaces forwarding rewrites Origin to localhost,
     # while retaining the original public authority in X-Forwarded-Host.
     # Neither header authorizes a request: the process nonce above is required.
+    # The Chromebook path was observed with HTTPS on the loopback Origin.
+    # Require the matching upstream Host and original browser Referer there.
+    https_loopback = (
+        origin == "https://localhost:8000"
+        and request.headers.get("host") == "localhost:8000"
+        and request.headers.get("referer", "").startswith("https://" + expected_host + "/")
+    )
     proxy_rewrite = (
-        origin == "http://localhost:8000"
+        (origin == "http://localhost:8000" or https_loopback)
         and fetch_site == "same-origin"
         and request.headers.get("x-forwarded-host", "") == expected_host
     )
