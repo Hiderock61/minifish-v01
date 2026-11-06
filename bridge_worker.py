@@ -28,7 +28,7 @@ def close(number: int) -> None:
     issue_transport.close(REPO, number)
 
 
-def run_job(issue: dict) -> dict:
+def run_job(issue: dict, *, private_mailbox=None) -> dict:
     payload = json.loads(issue.get("body") or "{}")
     mode = payload.get("mode", "demo")
     goal = str(payload.get("goal") or "").strip()
@@ -55,6 +55,26 @@ def run_job(issue: dict) -> dict:
             "credential_values_included": False,
             "owner_login_verified": False,
         }
+
+    if mode == "owner_private_delivery_mock":
+        # STRICTLY SYNTHETIC, test-only. The active Codespace's worker cannot
+        # receive this command and has no real private-result endpoint.
+        if (os.getenv("CODESPACE_NAME")
+                or os.getenv("MINIFISH_G1_PRIVATE_MOCK_E2E") != "1"
+                or "PYTEST_CURRENT_TEST" not in os.environ):
+            raise ValueError("PRIVATE_DELIVERY_MOCK_DISABLED")
+        if set(payload) != {"mode", "goal"} or goal != "READ_SYNTHETIC_JOB_TITLES":
+            raise ValueError("PRIVATE_DELIVERY_CONTRACT_BLOCKED")
+        from minifish.private_result_mailbox import PrivateResultMailbox
+        from minifish.owner_read_mock import run_mock_read
+        if not isinstance(private_mailbox, PrivateResultMailbox):
+            raise ValueError("PRIVATE_DELIVERY_CHANNEL_REQUIRED")
+        proof = run_mock_read()
+        if proof.status != "PASS":
+            raise ValueError("SYNTHETIC_SOURCE_NOT_CONFIRMED")
+        private_mailbox.publish(job_id=f"issue_{issue_no}", titles=proof.titles)
+        # GitHub-visible return: no title text, count, capability or link.
+        return private_mailbox.public_receipt(f"issue_{issue_no}")
 
     if mode == "owner_read_mock":
         # TEST-ONLY: never dispatch this branch from a running Codespace
