@@ -46,7 +46,7 @@ def test_cross_origin_and_navigation_policy_deny_by_default():
         ("http://127.0.0.1:8000/request/x", "GET", False, False),
         ("https://www.dropbox.com:443/request/fake_synthetic_123456", "GET", True, False),
         ("file:///tmp/not-owner-synthetic-file", "GET", False, False),
-        ("https://static.dropboxstatic.com/test", "POST", False, True),
+        ("https://static.dropboxstatic.com/test", "POST", False, False),
         ("https://dl.dropboxusercontent.com/user-data", "GET", False, False),
     )
     for url, method, is_main, expected in cases:
