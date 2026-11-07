@@ -31,7 +31,7 @@
     },
     "8000": {
       "label": "MiniFish Control",
-      "onAutoForward": "openBrowser",
+      "onAutoForward": "notify",
       "visibility": "private"
     },
     "8002": {
