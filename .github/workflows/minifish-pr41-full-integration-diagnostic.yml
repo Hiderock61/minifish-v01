@@ -19,6 +19,7 @@ jobs:
       PYTHONPATH: .
       MINIFISH_G1_E2E: '1'
       MINIFISH_G1_PRIVATE_MOCK_E2E: '1'
+      MINIFISH_BROWSER_E2E: '1'
     steps:
       - name: Checkout exact diagnostic head without credentials
         uses: actions/checkout@v4
