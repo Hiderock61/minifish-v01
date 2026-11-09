@@ -1,0 +1,84 @@
+name: MiniFish PR41 four blocked tests diagnostic
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+
+jobs:
+  four-test-diagnostic:
+    if: >-
+      github.event.pull_request.base.ref == 'test/g1-private-result-mailbox-20261107' &&
+      github.head_ref == 'test/pr41-four-test-diagnostic-20261109' &&
+      github.event.pull_request.head.repo.full_name == 'Hiderock61/minifish-v01'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout diagnostic branch without persisted credentials
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Verify PR41 origin and apply exact previously inspected patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          git merge-base --is-ancestor 4f1562e113ea0238e04c8e56e211fb2598fc2f89 HEAD
+          test "$(git rev-parse 4f1562e113ea0238e04c8e56e211fb2598fc2f89:bridge_worker.py)" = b37e3df35520231b26b974e4d4a43cf30453c4ce
+          echo '87211b054f4262605200022ad2438b2f3d0c205f65b57703e24bf161024fd5c6  ci/minifish_PR41_scripted_fixture_isolated_candidate.patch' | sha256sum --check
+          git apply --check ci/minifish_PR41_scripted_fixture_isolated_candidate.patch
+          git apply ci/minifish_PR41_scripted_fixture_isolated_candidate.patch
+          git diff --check
+          python -m compileall -q bridge_worker.py minifish/scripted_input_contract.py
+
+      - name: Install runtime and Chromium
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install -r requirements.txt
+          python -m playwright install chromium
+          python --version
+
+      - name: Run exactly four previously blocked synthetic localhost tests
+        shell: bash
+        env:
+          MINIFISH_G1_PRIVATE_MOCK_E2E: '1'
+        run: |
+          PYTHONPATH=. python -m pytest -vv -ra --junitxml=/tmp/minifish-four.xml \
+            tests/test_owner_read_mock_e2e.py::test_issue_to_browser_to_sanitized_receipt \
+            tests/test_owner_read_mock_e2e.py::test_private_titles_are_exact_and_vault_bytes_are_unchanged \
+            tests/test_owner_read_mock_e2e.py::test_without_fake_login_cookie_read_is_blocked \
+            tests/test_private_result_mailbox.py::test_issue_to_private_one_time_receiver_with_zero_public_data
+
+      - name: Strictly validate all four cases executed and passed
+        if: always()
+        shell: bash
+        run: |
+          python - <<'PY'
+          import xml.etree.ElementTree as ET
+          from pathlib import Path
+          p = Path('/tmp/minifish-four.xml')
+          if not p.is_file():
+              raise SystemExit('FAIL: JUnit results missing; no PASS claim')
+          cases = ET.parse(p).getroot().findall('.//testcase')
+          names = {c.attrib['name'] for c in cases}
+          required = {
+              'test_issue_to_browser_to_sanitized_receipt',
+              'test_private_titles_are_exact_and_vault_bytes_are_unchanged',
+              'test_without_fake_login_cookie_read_is_blocked',
+              'test_issue_to_private_one_time_receiver_with_zero_public_data',
+          }
+          passed = sum(not any(c.find(t) is not None for t in ('failure','error','skipped')) for c in cases)
+          failed = sum(any(c.find(t) is not None for t in ('failure','error')) for c in cases)
+          skipped = sum(c.find('skipped') is not None for c in cases)
+          print(f'FOUR_TESTS: collected={len(cases)} PASS={passed} FAIL={failed} SKIP={skipped}')
+          for c in cases:
+              print(c.attrib['name'], 'PASS' if not any(c.find(t) is not None for t in ('failure','error','skipped')) else 'NOT_PASS')
+          if len(cases) != 4 or names != required or passed != 4 or failed or skipped:
+              raise SystemExit('FAIL: four test acceptance conditions unmet')
+          print('FOUR_TESTS_VERIFIED_4_OF_4_PASS')
+          PY
