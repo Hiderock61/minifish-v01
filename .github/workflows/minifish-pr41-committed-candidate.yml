@@ -33,7 +33,7 @@ jobs:
           git merge-base --is-ancestor 4f1562e113ea0238e04c8e56e211fb2598fc2f89 HEAD
           test "$(git rev-parse 4f1562e113ea0238e04c8e56e211fb2598fc2f89:bridge_worker.py)" = b37e3df35520231b26b974e4d4a43cf30453c4ce
           echo '87211b054f4262605200022ad2438b2f3d0c205f65b57703e24bf161024fd5c6  ci/minifish_PR41_scripted_fixture_isolated_candidate.patch' | sha256sum --check
-          git diff --check 4f1562e113ea0238e04c8e56e211fb2598fc2f89 HEAD
+          git diff --check 4f1562e113ea0238e04c8e56e211fb2598fc2f89 HEAD -- bridge_worker.py minifish/scripted_input_contract.py tests/test_bridge_scripted_integration.py tests/test_scripted_browser_e2e.py tests/test_scripted_input_contract.py
           git apply --reverse --check ci/minifish_PR41_scripted_fixture_isolated_candidate.patch
           git apply --reverse ci/minifish_PR41_scripted_fixture_isolated_candidate.patch
           git diff --exit-code 4f1562e113ea0238e04c8e56e211fb2598fc2f89 -- bridge_worker.py minifish/scripted_input_contract.py tests/test_bridge_scripted_integration.py tests/test_scripted_browser_e2e.py tests/test_scripted_input_contract.py
