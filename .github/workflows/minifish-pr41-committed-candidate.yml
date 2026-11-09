@@ -1,0 +1,203 @@
+name: MiniFish PR41 committed candidate independent CI
+
+on:
+  push:
+    branches:
+      - isolate/pr41-scripted-input-v1-20261110
+
+permissions:
+  contents: read
+
+jobs:
+  isolated-integration:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    env:
+      PYTHONPATH: .
+      MINIFISH_G1_E2E: '1'
+      MINIFISH_G1_PRIVATE_MOCK_E2E: '1'
+      MINIFISH_BROWSER_E2E: '1'
+    steps:
+      - name: Checkout exact diagnostic head without credentials
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Verify committed code equals exact verified patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p ci-evidence
+          git merge-base --is-ancestor 4f1562e113ea0238e04c8e56e211fb2598fc2f89 HEAD
+          test "$(git rev-parse 4f1562e113ea0238e04c8e56e211fb2598fc2f89:bridge_worker.py)" = b37e3df35520231b26b974e4d4a43cf30453c4ce
+          echo '87211b054f4262605200022ad2438b2f3d0c205f65b57703e24bf161024fd5c6  ci/minifish_PR41_scripted_fixture_isolated_candidate.patch' | sha256sum --check
+          git diff --check 4f1562e113ea0238e04c8e56e211fb2598fc2f89 HEAD
+          git apply --reverse --check ci/minifish_PR41_scripted_fixture_isolated_candidate.patch
+          git apply --reverse ci/minifish_PR41_scripted_fixture_isolated_candidate.patch
+          git diff --exit-code 4f1562e113ea0238e04c8e56e211fb2598fc2f89 -- bridge_worker.py minifish/scripted_input_contract.py tests/test_bridge_scripted_integration.py tests/test_scripted_browser_e2e.py tests/test_scripted_input_contract.py
+          git apply --check ci/minifish_PR41_scripted_fixture_isolated_candidate.patch
+          git apply ci/minifish_PR41_scripted_fixture_isolated_candidate.patch
+          git diff --exit-code HEAD -- bridge_worker.py minifish/scripted_input_contract.py tests/test_bridge_scripted_integration.py tests/test_scripted_browser_e2e.py tests/test_scripted_input_contract.py
+          git diff --exit-code
+          python -m compileall -q bridge_worker.py minifish/scripted_input_contract.py
+          {
+            echo 'PR41_BASE=4f1562e113ea0238e04c8e56e211fb2598fc2f89'
+            echo "CANDIDATE_HEAD=$(git rev-parse HEAD)"
+            echo 'PATCH_SHA256=87211b054f4262605200022ad2438b2f3d0c205f65b57703e24bf161024fd5c6'
+            echo 'PATCH_COMMITTED_IN_HEAD=true'
+            echo 'PATCH_IN_REPOSITORY_TREE_VERIFIED=true'
+          } | tee ci-evidence/manifest.txt
+      - name: Install same Python 3.11 used in normal repo CI and Chromium
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install test environment
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install -r requirements.txt
+          python -m playwright install chromium
+          {
+            uname -a
+            python --version
+            python -m pytest --version
+            python -m playwright --version
+            python -m pip show playwright pytest cryptography | grep -E '^(Name|Version):'
+          } | tee ci-evidence/environment.txt
+
+      - name: Phase 1 - scripted input contract and browser E2E
+        id: p1
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pytest -q -ra --junitxml=ci-evidence/01-scripted.xml \
+            tests/test_scripted_input_contract.py \
+            tests/test_bridge_scripted_integration.py \
+            tests/test_scripted_browser_e2e.py \
+            2>&1 | tee ci-evidence/01-scripted.log
+
+      - name: Phase 2 - PR40 and PR41 mock regression
+        id: p2
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pytest -q -ra --junitxml=ci-evidence/02-pr40-pr41.xml \
+            tests/test_session_vault.py \
+            tests/test_session_g1_e2e.py \
+            tests/test_owner_read_mock_e2e.py \
+            tests/test_private_result_mailbox.py \
+            2>&1 | tee ci-evidence/02-pr40-pr41.log
+
+      - name: Phase 3 - whole repository pytest with same applied patch
+        id: p3
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pytest -q -ra --junitxml=ci-evidence/03-all.xml \
+            2>&1 | tee ci-evidence/03-all.log
+
+      - name: Phase 4 - explicitly rerun four Chromium localhost cases
+        id: p4
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pytest -q -ra --junitxml=ci-evidence/04-four.xml \
+            tests/test_owner_read_mock_e2e.py::test_issue_to_browser_to_sanitized_receipt \
+            tests/test_owner_read_mock_e2e.py::test_private_titles_are_exact_and_vault_bytes_are_unchanged \
+            tests/test_owner_read_mock_e2e.py::test_without_fake_login_cookie_read_is_blocked \
+            tests/test_private_result_mailbox.py::test_issue_to_private_one_time_receiver_with_zero_public_data \
+            2>&1 | tee ci-evidence/04-four.log
+      - name: Verify three independent JUnits and reject false GREEN
+        if: always()
+        shell: bash
+        env:
+          PHASE1: ${{ steps.p1.outcome }}
+          PHASE2: ${{ steps.p2.outcome }}
+          PHASE3: ${{ steps.p3.outcome }}
+        run: |
+          python - <<'PY' | tee ci-evidence/acceptance.txt
+          import os
+          import xml.etree.ElementTree as ET
+          from pathlib import Path
+          groups = []
+          errors = []
+          for stem, key in [('01-scripted','PHASE1'),('02-pr40-pr41','PHASE2'),('03-all','PHASE3')]:
+              path = Path('ci-evidence') / (stem+'.xml')
+              if not path.is_file():
+                  print(stem, 'NO JUNIT', os.getenv(key))
+                  errors.append(stem+': no JUnit')
+                  groups.append([])
+                  continue
+              cases = ET.parse(path).getroot().findall('.//testcase')
+              failed = [c for c in cases if c.find('failure') is not None or c.find('error') is not None]
+              skipped = [c for c in cases if c.find('skipped') is not None]
+              print(f'{stem}: collected={len(cases)}, PASS={len(cases)-len(failed)-len(skipped)}, FAIL={len(failed)}, SKIP={len(skipped)}, outcome={os.getenv(key)}')
+              groups.append(cases)
+              if failed or os.getenv(key) != 'success':
+                  errors.append(stem+': failed step or test')
+              if stem != '03-all' and skipped:
+                  errors.append(stem+': unexpected skips')
+          a,b,c = groups
+          if len(a) != 54:
+              errors.append('scripted case count not 54')
+          if len(c) != 373 or sum(x.find('skipped') is not None for x in c) != 5:
+              errors.append('whole repo case count not 368 PASS / 5 SKIP')
+          if len(b) != 21:
+              errors.append('PR40/PR41 case count not 21')
+          ids = lambda g: {(x.get('classname'),x.get('name')) for x in g}
+          if not ids(a).issubset(ids(c)) or not ids(b).issubset(ids(c)):
+              errors.append('full pytest did not contain targeted regressions')
+          four = {
+              'test_issue_to_browser_to_sanitized_receipt',
+              'test_private_titles_are_exact_and_vault_bytes_are_unchanged',
+              'test_without_fake_login_cookie_read_is_blocked',
+              'test_issue_to_private_one_time_receiver_with_zero_public_data'
+          }
+          for name,group in [('targeted',b),('all',c)]:
+              good = {x.get('name') for x in group if all(x.find(t) is None for t in ['failure','error','skipped'])}
+              if not four.issubset(good):
+                  errors.append(name+': previously blocked four not all PASS')
+          for e in errors: print('HOLD:',e)
+          if errors: raise SystemExit('INTEGRATION_REGRESSION_HOLD')
+          print('INTEGRATED_REGRESSION_ACCEPTED: 54 scripted, PR40/PR41, full pytest; blocked four PASS')
+          PY
+
+      - name: Verify exactly four standalone Chromium cases
+        if: always()
+        shell: bash
+        env:
+          PHASE4: ${{ steps.p4.outcome }}
+        run: |
+          python - <<'PY' | tee ci-evidence/four-acceptance.txt
+          import os
+          from pathlib import Path
+          import xml.etree.ElementTree as ET
+          p=Path('ci-evidence/04-four.xml')
+          if not p.exists(): raise SystemExit('FOUR_CASE_HOLD: JUnit missing')
+          cases=ET.parse(p).getroot().findall('.//testcase')
+          required={
+              'test_issue_to_browser_to_sanitized_receipt',
+              'test_private_titles_are_exact_and_vault_bytes_are_unchanged',
+              'test_without_fake_login_cookie_read_is_blocked',
+              'test_issue_to_private_one_time_receiver_with_zero_public_data',
+          }
+          bad=[c for c in cases if any(c.find(tag) is not None for tag in ('failure','error','skipped'))]
+          print('FOUR_STANDALONE collected=',len(cases),'PASS=',len(cases)-len(bad),'NOT_PASS=',len(bad),'outcome=',os.environ.get('PHASE4'))
+          if len(cases)!=4 or {c.attrib['name'] for c in cases}!=required or bad or os.environ.get('PHASE4')!='success':
+              raise SystemExit('FOUR_CASE_HOLD')
+          print('FOUR_CASES_COMMITTED_CANDIDATE_PASS')
+          PY
+      - name: Preserve test logs JUnit manifests and environment evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pr41-committed-candidate-audit
+          path: ci-evidence/
+          if-no-files-found: warn
+          retention-days: 14

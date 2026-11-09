@@ -8,6 +8,11 @@ import time
 
 from minifish import Action, MiniFishRunner, OpenAIPlanner, ScriptedPlanner
 from minifish import github_issue_transport as issue_transport
+from minifish.scripted_input_contract import (
+    MODE as SCRIPTED_MODE, InputContractError,
+    parse_scripted_fixture_issue, verify_scripted_fixture_state,
+    decode_issue_json,
+)
 
 REPO = os.getenv("MINIFISH_BRIDGE_REPO", "Hiderock61/minifish-v01")
 OWNER = os.getenv("MINIFISH_BRIDGE_OWNER", "Hiderock61")
@@ -28,7 +33,72 @@ def close(number: int) -> None:
     issue_transport.close(REPO, number)
 
 
-def run_job(issue: dict, *, private_mailbox=None) -> dict:
+def _scripted_enabled() -> bool:
+    return os.getenv("MINIFISH_ENABLE_SCRIPTED_FIXTURE_V1") == "1"
+
+
+def preflight_issue(issue: dict):
+    """Fail closed BEFORE acceptance; live script mode is disabled by default."""
+    raw = issue.get("body")
+    if not isinstance(raw, str):
+        raise ValueError("INVALID_ISSUE_BODY")
+    payload = decode_issue_json(raw)
+    if not isinstance(payload, dict):
+        raise ValueError("INVALID_ISSUE_PAYLOAD")
+    mode = payload.get("mode", "demo")
+    if mode == SCRIPTED_MODE:
+        if not _scripted_enabled():
+            raise ValueError("SCRIPTED_FIXTURE_DISABLED")
+        return parse_scripted_fixture_issue(issue, owner=OWNER)
+    goal = payload.get("goal")
+    if not isinstance(goal, str) or not goal.strip():
+        raise ValueError("GOAL_REQUIRED")
+    if mode == "agent":
+        if os.getenv("MINIFISH_ALLOW_PAID_BRIDGE_AGENT") != "1":
+            raise ValueError("PAID_AGENT_DISABLED_BY_DEFAULT")
+        url = payload.get("url", "")
+        if not isinstance(url, str) or not url.startswith(("http://", "https://")):
+            raise ValueError("INVALID_AGENT_START_URL")
+    elif mode not in ("demo", "owner_status", "read_only"):
+        raise ValueError("UNRECOGNIZED_MODE")
+    return None
+
+
+def claim_scripted_issue(number: int) -> bool:
+    """Atomic local claim survives Bridge restart; never auto-retry ambiguous work.
+
+    Only protects the SAME persistent RUN_ROOT filesystem, not multiple workers
+    on disjoint machines or a deleted Codespace. No secret data is written.
+    """
+    if type(number) is not int or not 1 <= number <= 2_000_000_000:
+        raise ValueError("INVALID_ISSUE_NUMBER")
+    run_dir = RUN_ROOT / f"issue_{number}"
+    run_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
+    if run_dir.is_symlink():
+        raise ValueError("UNSAFE_RUN_DIR")
+    try:
+        (run_dir / ".scripted_fixture_v1_claimed").mkdir(mode=0o700)
+    except FileExistsError:
+        return False
+    return True
+
+
+def run_scripted_fixture(job) -> dict:
+    """Use trusted internal HTML only; never issue a paid AI/model call."""
+    from cloud_api import DEMO_HTML
+    runner = MiniFishRunner(
+        ScriptedPlanner(job.actions), max_steps=4,
+        max_duration_seconds=40, headless=True,
+        profile_path=None, session_vault=None,
+        capture_dir=None, log_path=None,
+    )
+    state = runner.run(
+        goal=job.goal, start_url="about:blank", start_html=DEMO_HTML,
+    )
+    return verify_scripted_fixture_state(state, job)
+
+
+def run_job(issue: dict, *, private_mailbox=None, validated_scripted_job=None) -> dict:
     payload = json.loads(issue.get("body") or "{}")
     mode = payload.get("mode", "demo")
     goal = str(payload.get("goal") or "").strip()
@@ -39,6 +109,14 @@ def run_job(issue: dict, *, private_mailbox=None) -> dict:
 
     issue_no = int(issue["number"])
     run_dir = RUN_ROOT / f"issue_{issue_no}"
+
+    if mode == SCRIPTED_MODE:
+        if not _scripted_enabled():
+            raise ValueError("SCRIPTED_FIXTURE_DISABLED")
+        job = validated_scripted_job
+        if job is None:
+            job = parse_scripted_fixture_issue(issue, owner=OWNER)
+        return run_scripted_fixture(job)
 
     if mode == "owner_status":
         # Owner-authorized internal-only status. No website visit, cookie,
@@ -150,8 +228,31 @@ def main() -> None:
                     continue
                 seen.add(number)
                 try:
+                    validated = preflight_issue(issue)
+                except (InputContractError, ValueError) as exc:
+                    # Preflight failures are NOT accepted. Only fixed codes
+                    # ever reach public Issue comments.
+                    code = str(exc)
+                    allowed_codes = {
+                        "INVALID_ISSUE_BODY", "INVALID_ISSUE_JSON",
+                        "INVALID_ISSUE_PAYLOAD", "GOAL_REQUIRED",
+                        "SCRIPTED_FIXTURE_DISABLED", "PAID_AGENT_DISABLED_BY_DEFAULT",
+                        "INVALID_AGENT_START_URL", "UNRECOGNIZED_MODE",
+                    }
+                    if isinstance(exc, InputContractError):
+                        code = "SCRIPTED_INPUT_BLOCKED"
+                    elif code not in allowed_codes:
+                        code = "INVALID_JOB_INPUT"
+                    comment(number, "🐟 MiniFish Bridge BLOCKED: " + code)
+                    close(number)
+                    continue
+                if validated is not None and not claim_scripted_issue(number):
+                    # A previously claimed issue might still be RUNNING.
+                    # Never close it or post a misleading terminal result.
+                    continue
+                try:
                     comment(number, "🐟 MiniFish Bridge accepted this job.")
-                    result = run_job(issue)
+                    result = run_job(issue, validated_scripted_job=validated)
                     comment(number, "MiniFish result:\n" + json.dumps(result, ensure_ascii=False, indent=2))
                     close(number)
                 except Exception as exc:
