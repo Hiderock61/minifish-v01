@@ -1,0 +1,153 @@
+name: MiniFish G4c3 CDP integrated diagnostic (DO NOT MERGE)
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+
+jobs:
+  isolated-integration:
+    if: >-
+      github.event.pull_request.base.ref == 'test/pr41-four-test-diagnostic-20261109' &&
+      github.head_ref == 'test/g4c3-cdp-regression-20261115' &&
+      github.event.pull_request.head.repo.full_name == 'Hiderock61/minifish-v01'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      PYTHONPATH: .
+      MINIFISH_G1_E2E: '1'
+      MINIFISH_G1_PRIVATE_MOCK_E2E: '1'
+      MINIFISH_BROWSER_E2E: '1'
+      MINIFISH_BROWSER_TRANSPORT: local
+    steps:
+      - name: Checkout exact diagnostic head without credentials
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Verify immutable PR41 ancestor and apply SHA256-pinned patch only in runner
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p ci-evidence
+          echo '571cf8324a611ed307d9a2b3448c56922a8aa009bb54f1d360aca01fb596bb57  ci/g4c3/payload.tar.xz' | sha256sum --check
+          tar -xJf ci/g4c3/payload.tar.xz
+          git merge-base --is-ancestor 903769a8639b0b3517140c89c40c590a9b884d97 HEAD
+          test "$(git rev-parse 903769a8639b0b3517140c89c40c590a9b884d97:minifish/browser.py)" = 5a2288e31cf482099c24f1c484b3b852781bf1a7
+          test "$(git hash-object minifish/browser.py)" = 5a2288e31cf482099c24f1c484b3b852781bf1a7
+          git merge-base --is-ancestor 4f1562e113ea0238e04c8e56e211fb2598fc2f89 HEAD
+          test "$(git rev-parse 4f1562e113ea0238e04c8e56e211fb2598fc2f89:bridge_worker.py)" = b37e3df35520231b26b974e4d4a43cf30453c4ce
+          echo '87211b054f4262605200022ad2438b2f3d0c205f65b57703e24bf161024fd5c6  ci/minifish_PR41_scripted_fixture_isolated_candidate.patch' | sha256sum --check
+          git apply --check ci/minifish_PR41_scripted_fixture_isolated_candidate.patch
+          git apply ci/minifish_PR41_scripted_fixture_isolated_candidate.patch
+          echo '1bd59be21057d0ba75dd39a30d9f42f0adb18254c5b5f8c2212b7224306a5101  ci/g4c3/G4c_Full_CDP_Candidate_From_PR46.patch' | sha256sum --check
+          git apply --check ci/g4c3/G4c_Full_CDP_Candidate_From_PR46.patch
+          git apply ci/g4c3/G4c_Full_CDP_Candidate_From_PR46.patch
+          test "$(git hash-object minifish/browser.py)" = bf2eb214e53eb2c3e3b2ad304fdbfcff6fc23a41
+          git diff --check
+          python -m compileall -q bridge_worker.py minifish ci/g4c3/tests
+          {
+            echo "PR41_BASE=4f1562e113ea0238e04c8e56e211fb2598fc2f89"
+            echo "DIAGNOSTIC_HEAD=$(git rev-parse HEAD)"
+            echo "PATCH_SHA256=87211b054f4262605200022ad2438b2f3d0c205f65b57703e24bf161024fd5c6"
+            echo 'APPLIED_IN_EPHEMERAL_RUNNER_ONLY=true'
+            echo 'G4C3_PATCHED_BROWSER_BLOB=bf2eb214e53eb2c3e3b2ad304fdbfcff6fc23a41'
+          } | tee ci-evidence/manifest.txt
+
+      - name: Install same Python 3.11 used in normal repo CI and Chromium
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install test environment
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install -r requirements.txt
+          python -m playwright install --with-deps chromium
+          if ! command -v chromium >/dev/null && ! command -v google-chrome >/dev/null; then
+            BROWSER_BIN=$(python - <<'PY'
+          from playwright.sync_api import sync_playwright
+          with sync_playwright() as pw:
+              print(pw.chromium.executable_path)
+          PY
+            )
+            test -x "$BROWSER_BIN"
+            echo "MINIFISH_CHROMIUM_PATH=$BROWSER_BIN" >> "$GITHUB_ENV"
+          fi
+          {
+            uname -a
+            python --version
+            python -m pytest --version
+            python -m playwright --version
+            python -m pip show playwright pytest cryptography | grep -E '^(Name|Version):'
+          } | tee ci-evidence/environment.txt
+
+      - name: Phase 1 - scripted input contract and browser E2E
+        id: p1
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pytest -q -ra --junitxml=ci-evidence/01-scripted.xml \
+            tests/test_scripted_input_contract.py \
+            tests/test_bridge_scripted_integration.py \
+            tests/test_scripted_browser_e2e.py \
+            2>&1 | tee ci-evidence/01-scripted.log
+
+      - name: Phase 2 - PR40 and PR41 mock regression
+        id: p2
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pytest -q -ra --junitxml=ci-evidence/02-pr40-pr41.xml \
+            tests/test_session_vault.py \
+            tests/test_session_g1_e2e.py \
+            tests/test_owner_read_mock_e2e.py \
+            tests/test_private_result_mailbox.py \
+            2>&1 | tee ci-evidence/02-pr40-pr41.log
+
+      - name: Phase 3 - whole repository pytest with same applied patch
+        id: p3
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pytest -q -ra --junitxml=ci-evidence/03-all.xml \
+            2>&1 | tee ci-evidence/03-all.log
+
+      - name: Phase 4 - independent G4c 27 Chromium and vault regressions
+        id: p4
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pytest -q -ra --junitxml=ci-evidence/04-g4c.xml \
+            ci/g4c3/tests/test_g4b_isolated.py \
+            ci/g4c3/tests/test_g4c_lifecycle.py \
+            2>&1 | tee ci-evidence/04-g4c.log
+
+      - name: Strictly accept only all four complete JUnit phases
+        if: always()
+        shell: bash
+        env:
+          PHASE1: ${{ steps.p1.outcome }}
+          PHASE2: ${{ steps.p2.outcome }}
+          PHASE3: ${{ steps.p3.outcome }}
+          PHASE4: ${{ steps.p4.outcome }}
+        run: |
+          set -euo pipefail
+          python ci/g4c3/verify.py 2>&1 | tee ci-evidence/acceptance.txt
+
+      - name: Preserve test logs JUnit manifests and environment evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: minifish-g4c3-full-regression-audit
+          path: ci-evidence/
+          if-no-files-found: warn
+          retention-days: 14
