@@ -1,0 +1,70 @@
+{
+  "experiment": "BONSaY G3 T0航路チェック A/B pilot",
+  "phase": "G3-M11_PRELIVE_READ_ONLY",
+  "model": "gpt-6-luna",
+  "source_bytes_verified": 76809,
+  "source_count_verified": 6,
+  "six_git_blob_sha_matched": true,
+  "T0": "AIで仕事が速くできるようになると、人間の仕事の価値はどう変わる？",
+  "user_messages_per_condition": [
+    "READY_PROMPT",
+    "FIXED_T0",
+    "あ",
+    "あ"
+  ],
+  "conditions": {
+    "A": {
+      "input_sha256": "104c85d049e71ee9af4b5fdfcd088d86f9498b014a3eba612cd44bc53a316760",
+      "input_utf8_bytes": 80429,
+      "official_input_tokens": null,
+      "first_input_below_900000_bytes": true,
+      "api_requests": 0
+    },
+    "B": {
+      "input_sha256": "114aae0f0d3e357e8e8773139ee4116b6e6e34e279a3d3b1cb882b2b0780fd1d",
+      "input_utf8_bytes": 80989,
+      "official_input_tokens": null,
+      "first_input_below_900000_bytes": true,
+      "api_requests": 0
+    }
+  },
+  "max_calls_total": 8,
+  "max_output_tokens_per_call": 3000,
+  "input_tokens_total_cap": 400000,
+  "input_tokens_per_call_cap": 50000,
+  "local_estimated_spend_cap_usd": "0.05",
+  "standard_short_context_rates_usd_per_million": {
+    "input": "0.10",
+    "output": "0.50"
+  },
+  "cost_worst_case_usd": "0.052",
+  "max_input_tokens_total_for_worst_case_within_current_cap": 380000,
+  "full_8_call_completion_guaranteed_by_local_cap": false,
+  "can_claim_correct_api_price_now": "CONDITIONAL_ON_MODEL_PROCESSING_MODE_AND_UP_TO_DATE_RATES",
+  "can_claim_monthly_hard_spend_limit": false,
+  "sdk_runtime_at_pr47_for_minifish_tests": "OBSERVED_PYTHON311_BUT_NOT_G3_LIVE_CLIENT",
+  "sdk_client_retry_zero_verified": "UNKNOWN_NO_LIVE_CLIENT_CONFIG",
+  "fixed_model_project_access": "UNKNOWN_NOT_AUTHENTICATED",
+  "api_key_presence_and_validity": "UNKNOWN_NOT_CHECKED",
+  "official_input_token_count": "UNKNOWN_NOT_CALLED",
+  "billing_available": "UNKNOWN_NOT_CHECKED",
+  "external_token_count_authorization": "NOT_GRANTED",
+  "model_api_authorization": "NOT_GRANTED",
+  "reasoning_effort_fixed": "UNKNOWN_DEFAULT_ONLY",
+  "start_prompt_external_url_read_assurance": "NOT_VERIFIED_URL_IS_ONLY_A_REFERENCE",
+  "a_b_semantic_quality": "UNKNOWN_NOT_MEASURED",
+  "pilot_generalizability": "UNSUPPORTED_SINGLE_T0_SINGLE_PAIR",
+  "api_requests_executed": 0,
+  "official_token_counter_calls_executed": 0,
+  "authenticated_reads_executed": 0,
+  "github_writes_executed": 0,
+  "readiness": "LIVE_HOLD",
+  "independent_holds": [
+    "KEY_PROJECT_MODEL_ACCESS_UNKNOWN",
+    "OFFICIAL_INPUT_TOKEN_COUNT_UNKNOWN",
+    "OWNER_LIVE_REQUEST_AND_BILLABLE_CONSENT_NOT_GRANTED",
+    "SDK_RETRIES_MUST_BE_FORCED_TO_ZERO",
+    "BUDGET_8_CALL_MAX_NOT_GUARANTEED",
+    "A_B_SUCCESS_RUBRIC_NOT_YET_SCORED"
+  ]
+}

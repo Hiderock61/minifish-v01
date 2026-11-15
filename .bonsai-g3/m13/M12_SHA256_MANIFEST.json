@@ -1,0 +1,126 @@
+{
+  "date": "2026-11-15",
+  "stage": "G3_M12_FIRST_READY_OFFLINE",
+  "count": 23,
+  "sha256_items": [
+    {
+      "path": "M11_FINAL_READONLY_REPORT.md",
+      "sha256": "83501e3297d33e0a160336613a0da8424050d248e38af8b12ac673cb7931ce82",
+      "bytes": 8446
+    },
+    {
+      "path": "M11_MANIFEST_SHA256.json",
+      "sha256": "981a65a997a9e8ba865920572d68de393773254347e35567a3fd0b3d68891a7a",
+      "bytes": 2823
+    },
+    {
+      "path": "M12_FINAL_READONLY_REPORT.md",
+      "sha256": "715fdd0bc59baed638ba0b1f54b4e2e7f9c06914778be6bbdbe6975b5191094c",
+      "bytes": 4371
+    },
+    {
+      "path": "M12_SOURCE_INTEGRITY.json",
+      "sha256": "fe3b80d06383307664f386e01e49657e1a23249efeb00901b4676c558afd51c8",
+      "bytes": 3586
+    },
+    {
+      "path": "M12_TEST_RESULTS.txt",
+      "sha256": "51f5e913eda15d1bdfe48f8c65d1e0b6739fd7cd44ea6faffd883fd6609c5216",
+      "bytes": 99
+    },
+    {
+      "path": "README.md",
+      "sha256": "f4ff3614ab2d62d572da07d6a20ddf71848a959942327d76d20e1f4f0a16449c",
+      "bytes": 1743
+    },
+    {
+      "path": "README_M12.md",
+      "sha256": "81dc0b8cab2a3050c0e4faedc8aa13fb94f64f155245def3f86ae8978584df02",
+      "bytes": 6501
+    },
+    {
+      "path": "blank_blind_review.json",
+      "sha256": "28b4407a2940b7f67802f91c133d6f54b4e5c82f1e4fc365891f18443f91ef58",
+      "bytes": 3722
+    },
+    {
+      "path": "bonsai_g3_ab.py",
+      "sha256": "71eaecc03c4bec7af362e2b4a14a1059da6c021b6f17b39c2736885d19d98f66",
+      "bytes": 7552
+    },
+    {
+      "path": "bonsai_g3_m1_guard.py",
+      "sha256": "8372163fc611bc46c20e462a2b9a84323082ab82c40d34a9ad49405a3eca15e1",
+      "bytes": 15366
+    },
+    {
+      "path": "bonsai_g3_transport.py",
+      "sha256": "d95fd3742e76efb9728d249a6b36f0902802c96c0d0584430676a6a2788b267c",
+      "bytes": 12712
+    },
+    {
+      "path": "m11_preflight.py",
+      "sha256": "1d357ab4b775e6084650bc5a77f8c45ab2e2ba24819867d9b3b6183f55b762f8",
+      "bytes": 6227
+    },
+    {
+      "path": "m11_quality_audit.py",
+      "sha256": "91f5704cce1cfec3e77b78f9b948fae5879a99dc3ea25ce1109b3a821bb932d7",
+      "bytes": 3618
+    },
+    {
+      "path": "m11_readonly_receipt.json",
+      "sha256": "46d41bb7179b79ae85958b99b4b9d776dfc3ec79cc9e41c3a9445232c8a5a5a0",
+      "bytes": 2729
+    },
+    {
+      "path": "m12_ready_gate.py",
+      "sha256": "a26e6dd0edfc2fbc010ea49254a185ee0fd6302364fe7253289cb1659a13bbe1",
+      "bytes": 12303
+    },
+    {
+      "path": "pinned_six/BONSAI_START_HERE.md",
+      "sha256": "a7f522ab8166ecc03210099f35c29a2994a06a40f5ca2e0ade816797a007d3b3",
+      "bytes": 13057
+    },
+    {
+      "path": "pinned_six/experiments/bonsai-performance-runtime-v0.1d-candidate.md",
+      "sha256": "d419ee9489d7c2ac5460e0d49b91b28bb890a590416686c960afab72248491b5",
+      "bytes": 8265
+    },
+    {
+      "path": "pinned_six/methods/006A_hiderock-gekidan-roster.md",
+      "sha256": "7be865eca143de5c8a24d898be5004de83b0316da8d6b0ff60249ffb9a7768ef",
+      "bytes": 13147
+    },
+    {
+      "path": "pinned_six/methods/006B_hiderock-gekidan-emoji-legend.md",
+      "sha256": "c026358dc99114a12998e194f36556d14ac3c0d3ed8a7b105722fc2ab4cc1354",
+      "bytes": 13436
+    },
+    {
+      "path": "pinned_six/methods/006C_hideroko-injection-protocol.md",
+      "sha256": "199615f52530920a4811daa559c76f75e6d3c5965538956c0c8a92af2ab5db56",
+      "bytes": 6423
+    },
+    {
+      "path": "pinned_six/methods/006_hiderock-gekidan-method.md",
+      "sha256": "2b9d4499febfdfe6a22b026b070e034c333b5f26027fe00c69614c01ce47f10b",
+      "bytes": 22481
+    },
+    {
+      "path": "test_m11_preflight.py",
+      "sha256": "088655935bab4125f0568caf4d6335bf7a6287a1c871a66cc8affbebe95c2e62",
+      "bytes": 4389
+    },
+    {
+      "path": "test_m12_ready_gate.py",
+      "sha256": "bf19450cf663cc34eea8a13c63b95ee6d49098ec612214b9f13f2f192ae1ab9f",
+      "bytes": 14512
+    }
+  ],
+  "api_calls": 0,
+  "github_writes": 0,
+  "tests_passed": 46,
+  "m12_python311_runtime": "UNKNOWN_NOT_EXECUTED"
+}

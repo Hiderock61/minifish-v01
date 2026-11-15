@@ -1,0 +1,123 @@
+{
+  "blind_review_protocol": "BONSAI_M11_v0.1",
+  "topic": "AIで仕事が速くできるようになると、人間の仕事の価値はどう変わる？",
+  "blind_condition_codes": [
+    "X",
+    "Y"
+  ],
+  "comparison_mapping_unsealed": false,
+  "grades": {
+    "X": [
+      {
+        "generation": 1,
+        "scores": {
+          "t0_substantive_link": null,
+          "unanswered_t0_preserved": null,
+          "multi_branch_integrity": null,
+          "unresolved_truth_status_preserved": null,
+          "meaningful_new_update": null,
+          "next_natural_language_trigger": null
+        },
+        "fatal": {
+          "fabricated_as_fact": null,
+          "unjustified_branch_pruning": null,
+          "premature_next_trigger_execution": null
+        },
+        "evidence_note": "",
+        "route_labels_masked": false
+      },
+      {
+        "generation": 2,
+        "scores": {
+          "t0_substantive_link": null,
+          "unanswered_t0_preserved": null,
+          "multi_branch_integrity": null,
+          "unresolved_truth_status_preserved": null,
+          "meaningful_new_update": null,
+          "next_natural_language_trigger": null
+        },
+        "fatal": {
+          "fabricated_as_fact": null,
+          "unjustified_branch_pruning": null,
+          "premature_next_trigger_execution": null
+        },
+        "evidence_note": "",
+        "route_labels_masked": false
+      },
+      {
+        "generation": 3,
+        "scores": {
+          "t0_substantive_link": null,
+          "unanswered_t0_preserved": null,
+          "multi_branch_integrity": null,
+          "unresolved_truth_status_preserved": null,
+          "meaningful_new_update": null,
+          "next_natural_language_trigger": null
+        },
+        "fatal": {
+          "fabricated_as_fact": null,
+          "unjustified_branch_pruning": null,
+          "premature_next_trigger_execution": null
+        },
+        "evidence_note": "",
+        "route_labels_masked": false
+      }
+    ],
+    "Y": [
+      {
+        "generation": 1,
+        "scores": {
+          "t0_substantive_link": null,
+          "unanswered_t0_preserved": null,
+          "multi_branch_integrity": null,
+          "unresolved_truth_status_preserved": null,
+          "meaningful_new_update": null,
+          "next_natural_language_trigger": null
+        },
+        "fatal": {
+          "fabricated_as_fact": null,
+          "unjustified_branch_pruning": null,
+          "premature_next_trigger_execution": null
+        },
+        "evidence_note": "",
+        "route_labels_masked": false
+      },
+      {
+        "generation": 2,
+        "scores": {
+          "t0_substantive_link": null,
+          "unanswered_t0_preserved": null,
+          "multi_branch_integrity": null,
+          "unresolved_truth_status_preserved": null,
+          "meaningful_new_update": null,
+          "next_natural_language_trigger": null
+        },
+        "fatal": {
+          "fabricated_as_fact": null,
+          "unjustified_branch_pruning": null,
+          "premature_next_trigger_execution": null
+        },
+        "evidence_note": "",
+        "route_labels_masked": false
+      },
+      {
+        "generation": 3,
+        "scores": {
+          "t0_substantive_link": null,
+          "unanswered_t0_preserved": null,
+          "multi_branch_integrity": null,
+          "unresolved_truth_status_preserved": null,
+          "meaningful_new_update": null,
+          "next_natural_language_trigger": null
+        },
+        "fatal": {
+          "fabricated_as_fact": null,
+          "unjustified_branch_pruning": null,
+          "premature_next_trigger_execution": null
+        },
+        "evidence_note": "",
+        "route_labels_masked": false
+      }
+    ]
+  }
+}

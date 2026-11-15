@@ -1,0 +1,62 @@
+# BONSaY G3 M13: explicit owner-labeled, isolated Python 3.11 M12 mock test.
+# No automatic PR-open execution of this job, no real SDK, no live AI, no secrets.
+name: BONSaY G3 M13 Python 3.11 READY offline QA
+
+on:
+  pull_request:
+    types: [labeled]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: bonsai-g3-m13-${{ github.event.pull_request.number }}
+  cancel-in-progress: false
+
+jobs:
+  m12-ready-offline-py311:
+    if: >-
+      ${{ github.event.action == 'labeled' &&
+          github.event.label.name == 'bonsai-g3-m13-py311-approved' &&
+          github.actor == 'Hiderock61' &&
+          github.event.pull_request.user.login == 'Hiderock61' &&
+          github.event.pull_request.draft == true &&
+          github.event.pull_request.head.repo.full_name == 'Hiderock61/minifish-v01' &&
+          github.event.pull_request.base.repo.full_name == 'Hiderock61/minifish-v01' &&
+          github.event.pull_request.head.ref == 'review/bonsai-g3-m13-python311-20261115' &&
+          github.event.pull_request.base.ref == 'main' &&
+          github.event.pull_request.base.sha == 'f16a39043111d0de224e793b43ab6917780a02f9' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    permissions:
+      contents: read
+    defaults:
+      run:
+        working-directory: .bonsai-g3/m13
+    env:
+      BONSAI_G3_OFFLINE_MODE: offline_mock
+      PYTHONDONTWRITEBYTECODE: '1'
+      PYTEST_DISABLE_PLUGIN_AUTOLOAD: '1'
+      PYTHONPATH: ${{ github.workspace }}/.bonsai-g3/m13
+    steps:
+      - name: Checkout reviewed PR head without retaining credentials
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: ''
+      - name: Install pytest only
+        run: python -m pip install --disable-pip-version-check 'pytest==9.0.2'
+      - name: Verify all frozen M12 source files
+        run: python m13_ci_verify.py
+      - name: Run M11 plus M12 46 offline fake-SDK regression tests
+        run: python -m pytest -p no:cacheprovider -q test_m11_preflight.py test_m12_ready_gate.py
+      - name: Confirm offline CLI holds live requests
+        run: python m12_ready_gate.py
+
+# Never use pull_request_target, GitHub write permissions, credentials,
+# secrets, artifacts, real model requests or any automatic retries.
