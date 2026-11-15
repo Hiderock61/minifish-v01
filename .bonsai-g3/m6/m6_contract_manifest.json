@@ -1,0 +1,18 @@
+{
+  "phase": "G3-M6",
+  "title": "Draft PR owner-label branch review proposal",
+  "date": "2026-11-15",
+  "github_repo": "Hiderock61/minifish-v01",
+  "base_sha": "f16a39043111d0de224e793b43ab6917780a02f9",
+  "branch": "review/bonsai-g3-m6-20261115",
+  "owner_label": "bonsai-g3-m6-run-approved",
+  "state": "NOT_DEPLOYED",
+  "actions_run": "NOT_EXECUTED",
+  "model_api_calls": 0,
+  "main_changes": 0,
+  "six_sources_bytes": 76809,
+  "m5_original_manifest": "evidence/m5_file_sha256_manifest.json",
+  "workflow_candidate": ".github/workflows/bonsai-g3-m6-draft-review.yml",
+  "previous_tests": 118,
+  "new_tests_expected": 15
+}

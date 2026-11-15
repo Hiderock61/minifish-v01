@@ -1,0 +1,160 @@
+{
+  "file_count": 31,
+  "items": [
+    {
+      "path": ".github/workflows/bonsai-g3-m5-offline-candidate.yml",
+      "sha256": "eba304f93cf156c37a3c2fbf4c58c9cf776fd3bda795899f741f7bcefc0ac695",
+      "bytes": 1823
+    },
+    {
+      "path": "README.md",
+      "sha256": "4ba0ba59d4aee1a24c3e9eb00c0fda3517b4b091a9afbd8d9f87937fe29e0dae",
+      "bytes": 4160
+    },
+    {
+      "path": "evidence/m5_local_summary_python313.json",
+      "sha256": "ce2139d3de76d1c99e0e4211d91109d5a35b492e72d90c47fb0ae59aad73d7f6",
+      "bytes": 1434
+    },
+    {
+      "path": "evidence/m5_local_validation.json",
+      "sha256": "b77296bb5199e4fd58e9e790976fe3d5056601fecb26846085e5ac0cd19692bc",
+      "bytes": 719
+    },
+    {
+      "path": "g3/bonsai_g3_ab.py",
+      "sha256": "71eaecc03c4bec7af362e2b4a14a1059da6c021b6f17b39c2736885d19d98f66",
+      "bytes": 7552
+    },
+    {
+      "path": "g3/bonsai_g3_m1_guard.py",
+      "sha256": "8372163fc611bc46c20e462a2b9a84323082ab82c40d34a9ad49405a3eca15e1",
+      "bytes": 15366
+    },
+    {
+      "path": "g3/bonsai_g3_transport.py",
+      "sha256": "d95fd3742e76efb9728d249a6b36f0902802c96c0d0584430676a6a2788b267c",
+      "bytes": 12712
+    },
+    {
+      "path": "g3/github_source_receipts.json",
+      "sha256": "31990b140990103ea263e47464161a461de277b81c295d2e762c745020f52f1a",
+      "bytes": 2019
+    },
+    {
+      "path": "g3/m3_preflight.py",
+      "sha256": "df0db14ed3f81d851facea0f0e1e4a4226b5b5852bc475764b533ce07e92db52",
+      "bytes": 4313
+    },
+    {
+      "path": "g3/pinned_six/BONSAI_START_HERE.md",
+      "sha256": "a7f522ab8166ecc03210099f35c29a2994a06a40f5ca2e0ade816797a007d3b3",
+      "bytes": 13057
+    },
+    {
+      "path": "g3/pinned_six/experiments/bonsai-performance-runtime-v0.1d-candidate.md",
+      "sha256": "d419ee9489d7c2ac5460e0d49b91b28bb890a590416686c960afab72248491b5",
+      "bytes": 8265
+    },
+    {
+      "path": "g3/pinned_six/methods/006A_hiderock-gekidan-roster.md",
+      "sha256": "7be865eca143de5c8a24d898be5004de83b0316da8d6b0ff60249ffb9a7768ef",
+      "bytes": 13147
+    },
+    {
+      "path": "g3/pinned_six/methods/006B_hiderock-gekidan-emoji-legend.md",
+      "sha256": "c026358dc99114a12998e194f36556d14ac3c0d3ed8a7b105722fc2ab4cc1354",
+      "bytes": 13436
+    },
+    {
+      "path": "g3/pinned_six/methods/006C_hideroko-injection-protocol.md",
+      "sha256": "199615f52530920a4811daa559c76f75e6d3c5965538956c0c8a92af2ab5db56",
+      "bytes": 6423
+    },
+    {
+      "path": "g3/pinned_six/methods/006_hiderock-gekidan-method.md",
+      "sha256": "2b9d4499febfdfe6a22b026b070e034c333b5f26027fe00c69614c01ce47f10b",
+      "bytes": 22481
+    },
+    {
+      "path": "g3/preflight_readonly.py",
+      "sha256": "e7fbfac994f2685c79c9c227a16522db5466f3a934a08fc0b007fe641a8a0a73",
+      "bytes": 6144
+    },
+    {
+      "path": "g3/reconstruct_portable_sources.py",
+      "sha256": "4e977f2a14ff13289321b5fccf7abb7c50aa4316cf684db449dfc67b42f47a6c",
+      "bytes": 2930
+    },
+    {
+      "path": "g3/run_m1_readonly.py",
+      "sha256": "8e76f8fc1c88b36fb2eac9a632aee4beccd1fd967211d43831c654e9ebe508e3",
+      "bytes": 2638
+    },
+    {
+      "path": "g3/run_m2_readonly.py",
+      "sha256": "c1b812d9dee87ca3e288dee74c4fa76ba451e5591d0f97f8537877fb140e7ddf",
+      "bytes": 2400
+    },
+    {
+      "path": "g3/stage_pinned_sources.py",
+      "sha256": "e9f910f3362aa79d95e7a1daccda5fd064e5bd7b6afdf2228647dadd43232e92",
+      "bytes": 2438
+    },
+    {
+      "path": "g3/test_bonsai_g3_ab.py",
+      "sha256": "d06fddc90c18657ce64fc2e815849311a63acb839308fd026c669c00c41eefbb",
+      "bytes": 3278
+    },
+    {
+      "path": "g3/test_g3_m1_guard.py",
+      "sha256": "b9d87404498ed94069922b69acca33ee2d74ef812e7422100614cc13cd3d193a",
+      "bytes": 15939
+    },
+    {
+      "path": "g3/test_g3_transport.py",
+      "sha256": "47863e3edca07ecf18e41938d492d8e0834faa9008a2791849a92c69de83179e",
+      "bytes": 9306
+    },
+    {
+      "path": "g3/test_m3_preflight.py",
+      "sha256": "ea5513a72888b86d42c227c64197d1b7f328c049d229fc799aed6b327ca03e0b",
+      "bytes": 1939
+    },
+    {
+      "path": "g3/test_preflight.py",
+      "sha256": "d124f1b8db764ce213ae817cbdf40a299d7acce199cd5748027fea5ef64c35f7",
+      "bytes": 1545
+    },
+    {
+      "path": "g3/test_stage_pinned_sources.py",
+      "sha256": "2dc6f4f481e63921819e73a227626054be2c1937fb3269788e91f7ad44fdb327",
+      "bytes": 2095
+    },
+    {
+      "path": "g3/tests/test_g3_m2_sources.py",
+      "sha256": "9a4b9bdbb7e83c382b07ce29f1b4a18fdcaf473a84e048e945e29d101e61f919",
+      "bytes": 3338
+    },
+    {
+      "path": "m5_offline_runner.py",
+      "sha256": "7acebcc20f94769e681fe3baf42bc4ce001a8ae06c0a727ce7c84508f3e02ffb",
+      "bytes": 4409
+    },
+    {
+      "path": "m5_summary_check.py",
+      "sha256": "78cb632aebde23dd2a557298dec8ea0705188eafba0b86b183119c9223463433",
+      "bytes": 1073
+    },
+    {
+      "path": "manifest.json",
+      "sha256": "392f5b7ec4e089c877cb725ac658e7a3746aef32ac5f24ae244e5734ef62aef5",
+      "bytes": 430
+    },
+    {
+      "path": "test_m5_contract.py",
+      "sha256": "e32399f49e37bac5e097dc4f9750593b6c60f991a008de1435ee83efdfe398f5",
+      "bytes": 3235
+    }
+  ]
+}

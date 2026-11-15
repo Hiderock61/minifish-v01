@@ -1,0 +1,25 @@
+{
+  "phase": "M5",
+  "mode": "LOCAL_OFFLINE_MOCK_ONLY",
+  "source_verified_bytes": 76809,
+  "source_sha_match_count": 6,
+  "previous_regression_tests": 101,
+  "new_contract_tests": 17,
+  "tests_passed_local": 118,
+  "python_runtime": "3.13.5",
+  "python_311_static_parse_files": 19,
+  "python_311_actual_actions_run": "UNKNOWN_NOT_RUN",
+  "workflow_trigger_keys": [
+    "workflow_dispatch"
+  ],
+  "workflow_permission": {
+    "contents": "read"
+  },
+  "github_writes": 0,
+  "api_calls": 0,
+  "official_input_count_calls": 0,
+  "deployment_status": "NOT_DEPLOYED",
+  "semantic_verdict": "UNKNOWN",
+  "python311_summary_verifier_local_expected_result": "REJECTED_AS_INTENDED",
+  "actions_minutes_free_guarantee": false
+}

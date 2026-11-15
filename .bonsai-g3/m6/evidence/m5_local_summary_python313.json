@@ -1,0 +1,39 @@
+{
+  "phase": "BONSaY_G3_M5_OFFLINE_ACTIONS_CANDIDATE",
+  "status": "LOCAL_OFFLINE_MOCK_PASS",
+  "python_actual": "3.13.5",
+  "python_311_execution": false,
+  "source_status": "LOCAL_SOURCE_6_OF_6_PASS",
+  "source_bytes": 76809,
+  "source_expected_blob_sha": {
+    "BONSAI_START_HERE.md": "5b4c6a116a85402c677827baf4136762c53903eb",
+    "methods/006_hiderock-gekidan-method.md": "f76790bdc65f260558a1283cf84d4bd0001567ee",
+    "methods/006A_hiderock-gekidan-roster.md": "031938a9150c08632eddb36014170cb3e287db61",
+    "methods/006B_hiderock-gekidan-emoji-legend.md": "b2df1ae68320d14b7f5678f248923175a387c628",
+    "methods/006C_hideroko-injection-protocol.md": "f98367ec4a05895fadff657d954b1f3fb9096365",
+    "experiments/bonsai-performance-runtime-v0.1d-candidate.md": "2e8649b33088eeb74ea2ac38e5a4663d3877b498"
+  },
+  "conditions": {
+    "A": {
+      "generations": 3,
+      "calls": 4,
+      "status": "MOCK_ONLY"
+    },
+    "B": {
+      "generations": 3,
+      "calls": 4,
+      "status": "MOCK_ONLY"
+    }
+  },
+  "two_independent_sessions": true,
+  "shared_budget_ledger": true,
+  "token_count": "OFFLINE_SYNTHETIC_ONLY",
+  "model_api_calls": 0,
+  "official_token_counter_api_calls": 0,
+  "browser_calls": 0,
+  "external_writes": 0,
+  "live_model_ab": "NOT_TESTED",
+  "t0_semantic_quality": "UNKNOWN",
+  "github_actions_run": "NOT_EXECUTED_BY_THIS_TOOL",
+  "billing": "MODEL_API_ZERO_GITHUB_ACTIONS_MINUTES_NOT_FREE_GUARANTEE"
+}
