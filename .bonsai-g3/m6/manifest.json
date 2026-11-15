@@ -1,0 +1,12 @@
+{
+  "name": "BONSaY G3 M5 isolated offline Actions candidate",
+  "date": "2026-11-15",
+  "parent": "BONSaY_G3_M4_EnvAudit_v0.1_20261115.zip",
+  "parent_sha256": "7828d0ccf4afbc0537ab19b423c8b56e31225f710a049496c29bafd745f47e5c",
+  "source_count": 6,
+  "source_bytes": 76809,
+  "workflow_path": ".github/workflows/bonsai-g3-m5-offline-candidate.yml",
+  "deploy_status": "NOT_DEPLOYED",
+  "model_calls": 0,
+  "external_writes": 0
+}

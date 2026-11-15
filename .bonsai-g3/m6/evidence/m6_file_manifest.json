@@ -1,0 +1,45 @@
+{
+  "items": [
+    {
+      "path": ".github/workflows/bonsai-g3-m6-draft-review.yml",
+      "bytes": 2740,
+      "sha256": "f2c64f7dbea290ae5d987e17fcb33475053ccdfa67bfaf752a29e4decef41220"
+    },
+    {
+      "path": "README_M6.md",
+      "bytes": 5502,
+      "sha256": "0c57a06d7c1a648fbda0ef6ccbfbe9698c24766b058a500c2140b6dd719a6c83"
+    },
+    {
+      "path": "m6_integrity_check.py",
+      "bytes": 1795,
+      "sha256": "0dfb2baf8f03d61b1bd3e4cca2376b05d7543f36599fcd37fdc5021ecf7434b9"
+    },
+    {
+      "path": "test_m6_contract.py",
+      "bytes": 4896,
+      "sha256": "34446a1ae13158b4e15246a320ce67a0ca7ecb3fe2711d6a583f78619bd027dd"
+    },
+    {
+      "path": "m6_contract_manifest.json",
+      "bytes": 627,
+      "sha256": "7a3847f13c06dbc2c6f5463e58f4ecd0714d19d42d222c8cc9784f5a52209b0b"
+    },
+    {
+      "path": "evidence/m6_local_validation.json",
+      "bytes": 991,
+      "sha256": "32aff4bd70645b04bf7dfaed57fadd102b65c86dc469094963c39215e5699f04"
+    },
+    {
+      "path": "m5_offline_runner.py",
+      "bytes": 4409,
+      "sha256": "7acebcc20f94769e681fe3baf42bc4ce001a8ae06c0a727ce7c84508f3e02ffb"
+    },
+    {
+      "path": "m5_summary_check.py",
+      "bytes": 1073,
+      "sha256": "78cb632aebde23dd2a557298dec8ea0705188eafba0b86b183119c9223463433"
+    }
+  ],
+  "file_count": 8
+}

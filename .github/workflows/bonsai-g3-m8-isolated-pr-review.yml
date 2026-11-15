@@ -1,0 +1,66 @@
+# BONSaY G3-M8: non-deployed candidate. Separate explicit owner GO before GitHub placement.
+# Tests pre-verified M6 frozen materials inside a hidden directory, avoiding
+# existing repo README.md and preventing existing root pytest auto-collection.
+# This job does not run on PR creation, push, schedule, or dispatch.
+name: BONSaY G3 M8 owner-approved isolated PR mock QA
+
+on:
+  pull_request:
+    types: [labeled]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: bonsai-g3-m8-${{ github.event.pull_request.number }}
+  cancel-in-progress: false
+
+jobs:
+  isolated-offline-qa:
+    if: >-
+      ${{ github.event.action == 'labeled' &&
+          github.event.label.name == 'bonsai-g3-m6-run-approved' &&
+          github.actor == 'Hiderock61' &&
+          github.event.pull_request.user.login == 'Hiderock61' &&
+          github.event.pull_request.draft == true &&
+          github.event.pull_request.head.repo.full_name == 'Hiderock61/minifish-v01' &&
+          github.event.pull_request.base.repo.full_name == 'Hiderock61/minifish-v01' &&
+          github.event.pull_request.head.ref == 'review/bonsai-g3-m6-20261115' &&
+          github.event.pull_request.base.ref == 'main' &&
+          github.event.pull_request.base.sha == 'f16a39043111d0de224e793b43ab6917780a02f9' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    permissions:
+      contents: read
+    defaults:
+      run:
+        working-directory: .bonsai-g3/m6
+    env:
+      BONSAI_G3_OFFLINE_MODE: offline_mock
+      PYTHONDONTWRITEBYTECODE: '1'
+      PYTEST_DISABLE_PLUGIN_AUTOLOAD: '1'
+      PYTHONPATH: ${{ github.workspace }}/.bonsai-g3/m6/g3
+    steps:
+      - name: Checkout the reviewed PR head without retained credentials
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: ''
+      - name: Install pytest only (no OpenAI SDK, no Playwright)
+        run: python -m pip install --disable-pip-version-check 'pytest==9.0.2'
+      - name: Validate frozen M5 sources and checksums
+        run: python m6_integrity_check.py evidence/m5_file_sha256_manifest.json
+      - name: Run M6 offline regression tests
+        run: python -m pytest -q g3 test_m5_contract.py test_m6_contract.py
+      - name: Execute isolated synthetic A/B three generations
+        run: python m5_offline_runner.py --require-python311 --out m8_public_summary.json
+      - name: Assert sanitized result only
+        run: python m5_summary_check.py m8_public_summary.json
+
+# Intentionally NO pull_request_target, credentials, secret refs, API requests,
+# artifacts, issue comments, cache, write permissions, or automatic retries.

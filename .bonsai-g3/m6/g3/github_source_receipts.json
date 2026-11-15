@@ -1,0 +1,56 @@
+{
+  "as_of": "2026-11-15",
+  "origin": "GitHub connector fetch_file via connected account; response result.sha and result.content examined",
+  "validation": "REMOTE_BLOB_SHA_MATCH_ONLY",
+  "notes": "These receipts do not include the original file bytes. Local byte re-hashing remains pending; no live model call permitted.",
+  "sources": [
+    {
+      "path": "BONSAI_START_HERE.md",
+      "sha": "5b4c6a116a85402c677827baf4136762c53903eb",
+      "expected_sha": "5b4c6a116a85402c677827baf4136762c53903eb",
+      "utf8_bytes": 13057,
+      "utf16_code_units": 5868,
+      "sha_matched": true
+    },
+    {
+      "path": "methods/006_hiderock-gekidan-method.md",
+      "sha": "f76790bdc65f260558a1283cf84d4bd0001567ee",
+      "expected_sha": "f76790bdc65f260558a1283cf84d4bd0001567ee",
+      "utf8_bytes": 22481,
+      "utf16_code_units": 9527,
+      "sha_matched": true
+    },
+    {
+      "path": "methods/006A_hiderock-gekidan-roster.md",
+      "sha": "031938a9150c08632eddb36014170cb3e287db61",
+      "expected_sha": "031938a9150c08632eddb36014170cb3e287db61",
+      "utf8_bytes": 13147,
+      "utf16_code_units": 5410,
+      "sha_matched": true
+    },
+    {
+      "path": "methods/006B_hiderock-gekidan-emoji-legend.md",
+      "sha": "b2df1ae68320d14b7f5678f248923175a387c628",
+      "expected_sha": "b2df1ae68320d14b7f5678f248923175a387c628",
+      "utf8_bytes": 13436,
+      "utf16_code_units": 5499,
+      "sha_matched": true
+    },
+    {
+      "path": "methods/006C_hideroko-injection-protocol.md",
+      "sha": "f98367ec4a05895fadff657d954b1f3fb9096365",
+      "expected_sha": "f98367ec4a05895fadff657d954b1f3fb9096365",
+      "utf8_bytes": 6423,
+      "utf16_code_units": 2696,
+      "sha_matched": true
+    },
+    {
+      "path": "experiments/bonsai-performance-runtime-v0.1d-candidate.md",
+      "sha": "2e8649b33088eeb74ea2ac38e5a4663d3877b498",
+      "expected_sha": "2e8649b33088eeb74ea2ac38e5a4663d3877b498",
+      "utf8_bytes": 8265,
+      "utf16_code_units": 3671,
+      "sha_matched": true
+    }
+  ]
+}
