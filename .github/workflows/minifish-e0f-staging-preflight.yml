@@ -95,7 +95,8 @@ jobs:
           printf '%s  %s\n' \
             '20e5656fcdcf4118ede85edfb9d6bb9cc1bbb7ffb8b75622fffbcf36a835c3c0' \
             'sparticuz-chromium-153.0.0.tgz' | sha256sum --check --status
-          tar -tzf sparticuz-chromium-153.0.0.tgz | grep -q 'package/bin/chromium.br'
+          tar -tzf sparticuz-chromium-153.0.0.tgz > "$RUNNER_TEMP/e0f_chromium_archive_files.txt"
+          grep -Fxq 'package/bin/chromium.br' "$RUNNER_TEMP/e0f_chromium_archive_files.txt"
           echo 'E0F_CHROMIUM_PACKAGE_SHA256=PASS'
           echo 'E0F_CHROMIUM_EXECUTABLE_SHA256=NOT_CHECKED'
           echo 'E0F_DEPENDENCIES_ONLY_NOT_INSTALLED=true'
