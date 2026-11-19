@@ -1,0 +1,109 @@
+name: MiniFish E0-F pinned source and dependency staging preflight
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/minifish-e0f-staging-preflight.yml'
+      - 'e0f-preflight/environment-requirements.txt'
+
+permissions:
+  contents: read
+
+jobs:
+  e0f-pinned-input-preflight:
+    if: >-
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      startsWith(github.head_ref, 'e0f/')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Checkout pinned main with no persisted credentials
+        uses: actions/checkout@v4
+        with:
+          ref: f16a39043111d0de224e793b43ab6917780a02f9
+          fetch-depth: 1
+          path: e0f_main
+          persist-credentials: false
+      - name: Checkout pinned PR 41 with no persisted credentials
+        uses: actions/checkout@v4
+        with:
+          ref: 4f1562e113ea0238e04c8e56e211fb2598fc2f89
+          fetch-depth: 1
+          path: e0f_pr41
+          persist-credentials: false
+      - name: Checkout E0-F preflight inputs
+        uses: actions/checkout@v4
+        with:
+          path: e0f_inputs
+          persist-credentials: false
+      - name: Match exactly the fixed source commits and Git trees
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git -C e0f_main rev-parse HEAD)" = "f16a39043111d0de224e793b43ab6917780a02f9"
+          test "$(git -C e0f_main rev-parse HEAD^{tree})" = "100af6212565a69b4a7c859c774c2594a4d5a80c"
+          test "$(git -C e0f_pr41 rev-parse HEAD)" = "4f1562e113ea0238e04c8e56e211fb2598fc2f89"
+          test "$(git -C e0f_pr41 rev-parse HEAD^{tree})" = "bec1488ebbc4ce422808292176bd058907e7977e"
+          echo 'E0F_PINNED_MAIN=PASS'
+          echo 'E0F_PINNED_PR41=PASS'
+          echo 'E0F_B18_TREE=NOT_ASSEMBLED'
+          echo 'E0F_GA_S4_02_TO_05=NOT_RUN'
+          echo 'E0F_REAL_WEB=NOT_USED'
+          echo 'E0F_PRODUCTION=HOLD'
+          echo '- Fixed main and PR #41 source identity: **PASS**' >> "$GITHUB_STEP_SUMMARY"
+          echo '- B18/GA-S4 patch application: **NOT RUN, source bundles absent**' >> "$GITHUB_STEP_SUMMARY"
+      - name: Prepare exact previously recorded Python version
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12.14'
+          cache: ''
+      - name: Download Python distribution archives before isolation, no installation
+        shell: bash
+        run: |
+          set -euo pipefail
+          python --version
+          test "$(python -c 'import platform; print(platform.python_version())')" = "3.12.14"
+          mkdir -p "$RUNNER_TEMP/e0f_wheels"
+          python -m pip download --disable-pip-version-check --no-cache-dir \
+            --only-binary=:all: --no-deps \
+            --dest "$RUNNER_TEMP/e0f_wheels" \
+            -r e0f_inputs/e0f-preflight/environment-requirements.txt
+          echo "E0F_PYTHON_WHEEL_COUNT=$(find "$RUNNER_TEMP/e0f_wheels" -type f | wc -l)"
+          python - <<'PY'
+          import hashlib
+          import pathlib
+          import os
+          root = pathlib.Path(os.environ['RUNNER_TEMP']) / 'e0f_wheels'
+          wheels = sorted(root.iterdir())
+          if len(wheels) != 36:
+              raise SystemExit(f'E0F_DEPENDENCY_UNAVAILABLE: expected 36 archives, got {len(wheels)}')
+          for p in wheels:
+              assert p.is_file() and p.suffix == '.whl', f'E0F_DEPENDENCY_UNAVAILABLE: not a wheel: {p.name}'
+              print('E0F_WHEEL_SHA256', hashlib.sha256(p.read_bytes()).hexdigest(), p.name)
+          print('E0F_WHEEL_DOWNLOAD=PASS_VERSION_ONLY')
+          print('E0F_WHEEL_ORIGINAL_SHA=UNKNOWN')
+          PY
+          echo '- Python 3.12.14 dependency archives: **downloaded, SHA recorded, original per-wheel SHA not available**' >> "$GITHUB_STEP_SUMMARY"
+      - name: Download exact Chromium package archive before isolation
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/e0f_chromium"
+          npm pack --ignore-scripts '@sparticuz/chromium@153.0.0' \
+            --pack-destination "$RUNNER_TEMP/e0f_chromium"
+          cd "$RUNNER_TEMP/e0f_chromium"
+          printf '%s  %s\n' \
+            '20e5656fcdcf4118ede85edfb9d6bb9cc1bbb7ffb8b75622fffbcf36a835c3c0' \
+            'sparticuz-chromium-153.0.0.tgz' | sha256sum --check --status
+          tar -tzf sparticuz-chromium-153.0.0.tgz | grep -q 'package/bin/chromium.br'
+          echo 'E0F_CHROMIUM_PACKAGE_SHA256=PASS'
+          echo 'E0F_CHROMIUM_EXECUTABLE_SHA256=NOT_CHECKED'
+          echo 'E0F_DEPENDENCIES_ONLY_NOT_INSTALLED=true'
+          echo '- Chromium package archive fixed SHA: **PASS**; extracted binary SHA and full offline execution remain **UNKNOWN**' >> "$GITHUB_STEP_SUMMARY"
+      - name: Scope summary
+        if: always()
+        shell: bash
+        run: |
+          echo '- E0-D audit factory PASS inherited; not rerun here.' >> "$GITHUB_STEP_SUMMARY"
+          echo '- S4-01 existing PASS inherited; S4-02 to S4-05 **NOT RUN**.' >> "$GITHUB_STEP_SUMMARY"
+          echo '- No MiniFish application started; no account, secrets, real web, or production.' >> "$GITHUB_STEP_SUMMARY"
