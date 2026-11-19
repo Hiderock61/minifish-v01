@@ -1,0 +1,96 @@
+name: MiniFish E0-D audit factory eligibility preflight
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/minifish-e0d-audit-preflight.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  synthetic-factory-preflight:
+    if: >-
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      startsWith(github.head_ref, 'e0d/')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    steps:
+      - name: Verify audit tool and isolated child network with harmless descendant
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "E0D_SCOPE=synthetic_parent_child_only"
+          echo "E0D_APP_TESTS=not_run"
+          echo "E0D_REAL_WEB=not_used"
+          for cmd in sudo unshare strace python3; do
+            if ! command -v "$cmd" >/dev/null; then
+              echo "E0D_RESULT=AUDIT_UNAVAILABLE;missing_tool=$cmd"
+              exit 78
+            fi
+          done
+          if [ "$(sudo id -u)" != 0 ]; then
+            echo "E0D_RESULT=ENVIRONMENT_UNAVAILABLE;no_sudo_root"
+            exit 78
+          fi
+          PARENT_NET_NS=$(readlink /proc/self/ns/net)
+          TDIR=$(mktemp -d)
+          trap 'rm -rf "$TDIR"' EXIT
+          trap 'echo "E0D_RESULT=ENVIRONMENT_UNAVAILABLE;preflight_step_failed"' ERR
+          export E0D_PARENT_NET_NS="$PARENT_NET_NS"
+          # No checkout, no application code, no secrets, no downloads or URLs.
+          # The supervisor strace is OUTSIDE the new network namespace.
+          sudo env E0D_PARENT_NET_NS="$PARENT_NET_NS" \
+            strace -ff -qq -o "$TDIR/trace" \
+            -e trace=process,network \
+            unshare --net --fork python3 - <<'PY'
+          import errno
+          import os
+          import subprocess
+          import sys
+
+          parent_ns = os.environ['E0D_PARENT_NET_NS']
+          child_ns = os.readlink('/proc/self/ns/net')
+          assert parent_ns != child_ns, 'NETWORK_NAMESPACE_NOT_ISOLATED'
+          route_lines = open('/proc/net/route', encoding='utf-8').read().splitlines()[1:]
+          assert not any(line.split()[1] == '00000000' for line in route_lines if len(line.split()) >= 2), 'DEFAULT_ROUTE_PRESENT'
+          # Only TEST-NET-1, which is reserved for documentation, is addressed.
+          # In a properly isolated namespace connect_ex returns ENETUNREACH.
+          code = '''import errno, socket, sys
+          s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+          s.settimeout(1)
+          result = s.connect_ex(('192.0.2.1', 9))
+          s.close()
+          print('E0D_CONNECT_ERRNO=' + str(result))
+          sys.exit(0 if result in (errno.ENETUNREACH, errno.EHOSTUNREACH) else 7)
+          '''
+          result = subprocess.run([sys.executable, '-c', code], capture_output=True, text=True)
+          assert result.returncode == 0, 'OFFLINE_CONNECT_DID_NOT_FAIL_CLOSED'
+          print('E0D_CHILD_NAMESPACE_DIFFERENT=true')
+          print('E0D_CHILD_DEFAULT_ROUTE=absent')
+          print('E0D_DOCUMENTATION_IP_CONNECT=unreachable')
+          PY
+          # Independent trace remains local to the workflow runner.
+          # Check child/grandchild behavior was actually observed by the tracer.
+          if ! sudo grep -h 'execve(' "$TDIR"/trace.* | grep -q 'python3'; then
+            echo 'E0D_RESULT=AUDIT_UNAVAILABLE;python_exec_not_traced'
+            exit 78
+          fi
+          if ! sudo grep -h 'connect(' "$TDIR"/trace.* | grep -q '192.0.2.1'; then
+            echo 'E0D_RESULT=AUDIT_UNAVAILABLE;grandchild_connect_not_traced'
+            exit 78
+          fi
+          if [ "$(find "$TDIR" -type f -name 'trace.*' | wc -l)" -lt 3 ]; then
+            echo 'E0D_RESULT=AUDIT_UNAVAILABLE;descendant_trace_files_missing'
+            exit 78
+          fi
+          echo 'E0D_RESULT=SYNTHETIC_FACTORY_PREFLIGHT_PASS'
+          echo 'E0D_GA_S4_02_TO_05=NOT_RUN'
+          echo 'E0D_PRODUCTION=HOLD'
+          {
+            echo '### E0-D synthetic factory preflight'
+            echo '- Scope: isolated harmless parent/child; no MiniFish application run'
+            echo '- Audit: external strace -ff tracing process and network syscalls'
+            echo '- Network: isolated namespace, no default route, TEST-NET-1 unreachable'
+            echo '- GA-S4 S4-02-05: **NOT RUN**; production **HOLD**'
+          } >> "$GITHUB_STEP_SUMMARY"
