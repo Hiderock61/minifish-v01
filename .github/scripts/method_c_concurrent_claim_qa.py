@@ -1,7 +1,7 @@
 """Two-run acceptance for the protected create-only GitHub execution right."""
 import ctypes
 from datetime import datetime
-from http.client import HTTPSConnection, HTTPResponse
+from http.client import HTTPSConnection, HTTPResponse, IncompleteRead
 import json
 import os
 from pathlib import Path
@@ -18,7 +18,7 @@ from minifish.owner_approval import approved_job_from_review, review_message
 BRANCHES = {"mf2-qa/claim-02-a", "mf2-qa/claim-02-b"}
 WORKFLOW = ".github/workflows/minifish-method-c-claim-qa.yml"
 PROBE_STEP = "Concurrent claim probe"
-JOB = ApprovedReadJob("qa-concurrent-05", 1, "Concurrent synthetic receipt", "https://example.com/")
+JOB = ApprovedReadJob("qa-concurrent-06", 1, "Concurrent synthetic receipt", "https://example.com/")
 REF = f"refs/tags/minifish-method-c/claimed/{JOB.job_id}"
 SCOPE = f"One concurrent POST per Run for {REF}; synthetic receipt only"
 SECOND = 10**9
@@ -123,19 +123,13 @@ def clock_evidence():
     return kernel_clock_evidence() or {"source": "unavailable", "uncertainty_ns": None}
 
 
-class TimedResponse(HTTPResponse):
-    def _read_status(self):
-        result = super()._read_status()
-        if not hasattr(self, "status_line_ns"):
-            self.status_line_ns = time_ns()
-        return result
-
-
 def attempt_claim(approval, source_sha, target):
     connection = HTTPSConnection("api.github.com", timeout=10)
-    connection.response_class = TimedResponse
     sent = received = None
     calls = 0
+
+    def record(event, **fields):
+        print(json.dumps({"event": event, "job_id": JOB.job_id, "ref": REF, **fields}), flush=True)
 
     def create(request):
         nonlocal sent, received
@@ -143,19 +137,61 @@ def attempt_claim(approval, source_sha, target):
         while (remaining := target - time_ns()) > 0:
             sleep(remaining / SECOND)
         require(time_ns() - target <= 250_000_000, "HOLD: missed common launch time")
-        connection.request("POST", f"/repos/{REPOSITORY}/git/refs", json.dumps(request), headers={
-            "Accept": "application/vnd.github+json", "Authorization": "Bearer " + os.environ["GH_TOKEN"],
-            "Content-Type": "application/json", "X-GitHub-Api-Version": "2022-11-28",
-            "User-Agent": "MiniFish-Method-C-Concurrent-QA",
-        })
-        sent = time_ns()
-        response = connection.getresponse()
-        received = response.status_line_ns
-        data = json.loads(response.read(262144))
-        print(json.dumps({"claim_http": response.status, "sent_ns": sent, "status_line_ns": received,
-                          "request_id": response.getheader("X-GitHub-Request-Id"), "job_id": JOB.job_id,
-                          "ref": REF, "object_sha": data.get("object", {}).get("sha"),
-                          "message": data.get("message")}), flush=True)
+
+        phase = "connect"
+        started = monotonic_ns()
+
+        class ObservedResponse(HTTPResponse):
+            def _read_status(self):
+                nonlocal phase, received
+                phase = "status_line"
+                result = super()._read_status()
+                timestamp = time_ns()
+                record("status_line", at_ns=timestamp, claim_http=result[1])
+                if result[1] != 100:
+                    received = timestamp
+                phase = "headers"
+                return result
+
+        connection.response_class = ObservedResponse
+        try:
+            record("connect_start", at_ns=time_ns(), target_ns=target)
+            connection.connect()
+            record("connect_complete", at_ns=time_ns())
+            phase = "send"
+            record("send_start", at_ns=time_ns())
+            connection.request("POST", f"/repos/{REPOSITORY}/git/refs", json.dumps(request), headers={
+                "Accept": "application/vnd.github+json", "Authorization": "Bearer " + os.environ["GH_TOKEN"],
+                "Content-Type": "application/json", "X-GitHub-Api-Version": "2022-11-28",
+                "User-Agent": "MiniFish-Method-C-Concurrent-QA",
+            })
+            sent = time_ns()
+            record("send_complete", at_ns=sent)
+            phase = "status_line"
+            response = connection.getresponse()
+            request_id = response.getheader("X-GitHub-Request-Id", "")
+            record("headers_complete", at_ns=time_ns(), claim_http=response.status,
+                   request_id=request_id if re.fullmatch(r"[A-Fa-f0-9:]{1,128}", request_id) else None)
+            phase = "body_read"
+            expected_size = response.length
+            body = response.read(262145)
+            if len(body) > 262144:
+                raise ValueError("oversized response body")
+            if expected_size is not None and len(body) < expected_size:
+                raise IncompleteRead(body, expected_size - len(body))
+            record("body_read_complete", at_ns=time_ns(), size_bytes=len(body))
+            phase = "body_parse"
+            data = json.loads(body)
+            if not isinstance(data, dict):
+                raise ValueError("unexpected response shape")
+            obj = data.get("object")
+            object_matches = isinstance(obj, dict) and data.get("ref") == REF and obj.get("sha") == source_sha
+            record("body_parse_complete", at_ns=time_ns(), object_matches=object_matches,
+                   reference_already_exists=data.get("message") in ("Reference already exists", "Reference already exists."))
+        except Exception as error:
+            record("communication_error", at_ns=time_ns(), phase=phase, error_type=type(error).__name__,
+                   elapsed_ns=monotonic_ns() - started)
+            raise
         return response.status, data
 
     def receipt(_payload):
@@ -170,7 +206,6 @@ def attempt_claim(approval, source_sha, target):
         if delay > 0:
             sleep(delay)
         before = clock_evidence()
-        connection.connect()
         clock_start, monotonic_start = time_ns(), monotonic_ns()
         outcome = run_approved_read_job(issue, approval=approval, source_sha=source_sha,
                                         create_ref=create, run_job=receipt)
