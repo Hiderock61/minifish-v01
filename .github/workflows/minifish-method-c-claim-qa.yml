@@ -1,4 +1,4 @@
-name: MiniFish Method C execution-right QA only
+name: MiniFish Method C concurrent claim QA only
 
 on:
   push:
@@ -17,7 +17,7 @@ jobs:
         with:
           persist-credentials: false
       - run: python -m pip install playwright==1.62.0
-      - run: PYTHONPATH=. python .github/scripts/method_c_claim_qa.py prepare
+      - run: PYTHONPATH=. python .github/scripts/method_c_concurrent_claim_qa.py prepare
 
   verify:
     needs: prepare
@@ -26,12 +26,17 @@ jobs:
       actions: read
       contents: write
     runs-on: ubuntu-24.04
-    timeout-minutes: 6
+    timeout-minutes: 8
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
           persist-credentials: false
       - run: python -m pip install playwright==1.62.0
-      - run: PYTHONPATH=. python .github/scripts/method_c_claim_qa.py verify
+      - name: Arm claim
+        run: PYTHONPATH=. python .github/scripts/method_c_concurrent_claim_qa.py arm
+        env:
+          GH_TOKEN: ${{ github.token }}
+      - name: Concurrent claim probe
+        run: PYTHONPATH=. python .github/scripts/method_c_concurrent_claim_qa.py claim
         env:
           GH_TOKEN: ${{ github.token }}
