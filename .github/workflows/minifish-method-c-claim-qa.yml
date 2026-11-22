@@ -1,0 +1,37 @@
+name: MiniFish Method C execution-right QA only
+
+on:
+  push:
+    branches: [mf2-qa/claim-02-a, mf2-qa/claim-02-b]
+
+permissions:
+  contents: read
+
+jobs:
+  prepare:
+    if: github.repository == 'Hiderock61/minifish-v01' && !github.event.deleted && github.run_attempt == 1
+    runs-on: ubuntu-24.04
+    timeout-minutes: 4
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - run: python -m pip install playwright==1.62.0
+      - run: PYTHONPATH=. python .github/scripts/method_c_claim_qa.py prepare
+
+  verify:
+    needs: prepare
+    environment: mf2-method-c-claim-qa
+    permissions:
+      actions: read
+      contents: write
+    runs-on: ubuntu-24.04
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - run: python -m pip install playwright==1.62.0
+      - run: PYTHONPATH=. python .github/scripts/method_c_claim_qa.py verify
+        env:
+          GH_TOKEN: ${{ github.token }}
