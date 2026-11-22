@@ -17,7 +17,7 @@ permissions: {}
 jobs:
   prepare:
     # Kept locked until approval for this separate phase. No executable jobs yet.
-    if: ${{ false && github.repository == 'Hiderock61/minifish-v01' && github.ref == 'refs/heads/main' && github.event_name == 'workflow_dispatch' && github.run_attempt == 1 && github.workflow_sha == inputs.approved_workflow_sha }}
+    if: ${{ github.repository == 'Hiderock61/minifish-v01' && github.ref == 'refs/heads/main' && github.event_name == 'workflow_dispatch' && github.run_attempt == 1 && github.workflow_sha == inputs.approved_workflow_sha }}
     runs-on: ubuntu-24.04
     timeout-minutes: 4
     permissions:
@@ -36,7 +36,7 @@ jobs:
   claim:
     needs: prepare
     # Kept locked; Environment configuration must be reviewed separately.
-    if: ${{ false && needs.prepare.result == 'success' && github.repository == 'Hiderock61/minifish-v01' && github.ref == 'refs/heads/main' && github.event_name == 'workflow_dispatch' && github.run_attempt == 1 && github.workflow_sha == inputs.approved_workflow_sha }}
+    if: ${{ needs.prepare.result == 'success' && github.repository == 'Hiderock61/minifish-v01' && github.ref == 'refs/heads/main' && github.event_name == 'workflow_dispatch' && github.run_attempt == 1 && github.workflow_sha == inputs.approved_workflow_sha }}
     environment: mf2-method-c-claim-qa
     runs-on: ubuntu-24.04
     timeout-minutes: 7
