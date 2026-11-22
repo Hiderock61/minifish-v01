@@ -15,9 +15,54 @@ name: MiniFish 2 phase 2 synthetic precheck (locked draft)
 permissions: {}
 
 jobs:
+  prepare:
+    # Kept locked until approval for this separate phase. No executable jobs yet.
+    if: ${{ false && github.repository == 'Hiderock61/minifish-v01' && github.ref == 'refs/heads/main' && github.event_name == 'workflow_dispatch' && github.run_attempt == 1 && github.workflow_sha == inputs.approved_workflow_sha }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 4
+    permissions:
+      contents: read
+    env:
+      APPROVED_WORKFLOW_SHA: ${{ inputs.approved_workflow_sha }}
+      ACTUAL_WORKFLOW_SHA: ${{ github.workflow_sha }}
+      APPROVED_IMAGE_VERSION: ${{ inputs.approved_image_version }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: Prepare exact owner review comment
+        run: python3 .github/scripts/method_c_phase2_gate.py prepare
+
+  claim:
+    needs: prepare
+    # Kept locked; Environment configuration must be reviewed separately.
+    if: ${{ false && needs.prepare.result == 'success' && github.repository == 'Hiderock61/minifish-v01' && github.ref == 'refs/heads/main' && github.event_name == 'workflow_dispatch' && github.run_attempt == 1 && github.workflow_sha == inputs.approved_workflow_sha }}
+    environment: mf2-method-c-claim-qa
+    runs-on: ubuntu-24.04
+    timeout-minutes: 4
+    permissions:
+      actions: read
+      contents: write
+    outputs:
+      acquired: ${{ steps.claim.outputs.acquired }}
+    env:
+      APPROVED_WORKFLOW_SHA: ${{ inputs.approved_workflow_sha }}
+      ACTUAL_WORKFLOW_SHA: ${{ github.workflow_sha }}
+      APPROVED_IMAGE_VERSION: ${{ inputs.approved_image_version }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: Verify reviewer and acquire fixed claim once
+        id: claim
+        run: python3 .github/scripts/method_c_phase2_gate.py claim
+        env:
+          GH_TOKEN: ${{ github.token }}
+
   synthetic-precheck:
+    needs: claim
     # Keep false in this draft. Activation requires a separate decision.
-    if: ${{ false && github.repository == 'Hiderock61/minifish-v01' && github.event_name == 'workflow_dispatch' && github.run_attempt == '1' && github.workflow_sha == inputs.approved_workflow_sha }}
+    if: ${{ false && needs.claim.result == 'success' && needs.claim.outputs.acquired == 'true' && github.ref == 'refs/heads/main' && github.repository == 'Hiderock61/minifish-v01' && github.event_name == 'workflow_dispatch' && github.run_attempt == '1' && github.workflow_sha == inputs.approved_workflow_sha }}
     runs-on: ubuntu-24.04
     timeout-minutes: 4
     env:
