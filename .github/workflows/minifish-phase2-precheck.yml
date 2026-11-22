@@ -39,12 +39,10 @@ jobs:
     if: ${{ false && needs.prepare.result == 'success' && github.repository == 'Hiderock61/minifish-v01' && github.ref == 'refs/heads/main' && github.event_name == 'workflow_dispatch' && github.run_attempt == 1 && github.workflow_sha == inputs.approved_workflow_sha }}
     environment: mf2-method-c-claim-qa
     runs-on: ubuntu-24.04
-    timeout-minutes: 4
+    timeout-minutes: 7
     permissions:
       actions: read
       contents: write
-    outputs:
-      acquired: ${{ steps.claim.outputs.acquired }}
     env:
       APPROVED_WORKFLOW_SHA: ${{ inputs.approved_workflow_sha }}
       ACTUAL_WORKFLOW_SHA: ${{ github.workflow_sha }}
@@ -58,19 +56,8 @@ jobs:
         run: python3 .github/scripts/method_c_phase2_gate.py claim
         env:
           GH_TOKEN: ${{ github.token }}
-
-  synthetic-precheck:
-    needs: claim
-    # Keep false in this draft. Activation requires a separate decision.
-    if: ${{ false && needs.claim.result == 'success' && needs.claim.outputs.acquired == 'true' && github.ref == 'refs/heads/main' && github.repository == 'Hiderock61/minifish-v01' && github.event_name == 'workflow_dispatch' && github.run_attempt == '1' && github.workflow_sha == inputs.approved_workflow_sha }}
-    runs-on: ubuntu-24.04
-    timeout-minutes: 4
-    env:
-      APPROVED_IMAGE_VERSION: ${{ inputs.approved_image_version }}
-      APPROVED_WORKFLOW_SHA: ${{ inputs.approved_workflow_sha }}
-      ACTUAL_WORKFLOW_SHA: ${{ github.workflow_sha }}
-    steps:
       - name: Check worker admission and independent manager timeout
+        if: ${{ success() && steps.claim.outputs.acquired == 'true' }}
         shell: bash
         timeout-minutes: 2
         run: |
@@ -378,7 +365,7 @@ jobs:
           raise SystemExit(0 if facts["overall"] == "LIMITED_SYNTHETIC_PASS" else 1)
           PY
       - name: Preserve bounded evidence for independent readback
-        if: ${{ always() }}
+        if: ${{ always() && steps.claim.outputs.acquired == 'true' }}
         timeout-minutes: 1
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
