@@ -1,0 +1,343 @@
+name: MiniFish 2 phase 2 synthetic precheck (locked draft)
+
+"on":
+  workflow_dispatch:
+    inputs:
+      approved_workflow_sha:
+        description: Separately approved full workflow commit SHA
+        required: true
+        type: string
+      approved_image_version:
+        description: Separately approved exact ubuntu-24.04 runner image version
+        required: true
+        type: string
+
+permissions: {}
+
+jobs:
+  synthetic-precheck:
+    # Keep false in this draft. Activation requires a separate decision.
+    if: ${{ false && github.repository == 'Hiderock61/minifish-v01' && github.event_name == 'workflow_dispatch' && github.run_attempt == '1' && github.workflow_sha == inputs.approved_workflow_sha }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 4
+    env:
+      APPROVED_IMAGE_VERSION: ${{ inputs.approved_image_version }}
+      APPROVED_WORKFLOW_SHA: ${{ inputs.approved_workflow_sha }}
+      ACTUAL_WORKFLOW_SHA: ${{ github.workflow_sha }}
+    steps:
+      - name: Check worker admission and independent manager timeout
+        shell: bash
+        timeout-minutes: 2
+        run: |
+          set -euo pipefail
+          install -d -m 0700 "$RUNNER_TEMP/mf2-phase2-evidence"
+          /usr/bin/python3 -I -S - "$RUNNER_TEMP/mf2-phase2-evidence" <<'PY'
+          import json
+          import os
+          import re
+          import stat
+          import subprocess
+          import sys
+          import time
+          from pathlib import Path
+
+          evidence = Path(sys.argv[1])
+          run_id = os.environ["GITHUB_RUN_ID"]
+          attempt = os.environ["GITHUB_RUN_ATTEMPT"]
+          if not re.fullmatch(r"[0-9]{1,20}", run_id) or attempt != "1":
+              raise SystemExit("PREEXEC_GATE_INCOMPLETE: invalid execution identity")
+          unit = f"mf2-p2-{run_id}-{attempt}.service"
+          gate = Path(f"/run/mf2-p2-{run_id}-{attempt}")
+          release = gate / "release"
+          cgroot = Path("/sys/fs/cgroup")
+          sudo = ["/usr/bin/sudo", "-n", "--"]
+          ctl = sudo + ["/usr/bin/systemctl"]
+          properties = (
+              "LoadState", "ActiveState", "SubState", "Result", "MainPID",
+              "ControlGroup", "User", "KillMode", "RuntimeMaxUSec", "TimeoutStopUSec",
+              "InvocationID", "TimeoutStartUSec",
+              "Restart", "Delegate", "SendSIGKILL", "NoNewPrivileges",
+              "PrivateNetwork", "ProtectControlGroups", "ExecMainCode", "ExecMainStatus",
+          )
+          meta = {"run_id": run_id, "attempt": attempt, "unit": unit,
+                  "repository": os.environ.get("GITHUB_REPOSITORY"),
+                  "workflow_sha": os.environ.get("ACTUAL_WORKFLOW_SHA"),
+                  "expected_image": os.environ.get("APPROVED_IMAGE_VERSION"),
+                  "runtime_limit_seconds": 30, "stop_grace_seconds": 3,
+                  "start_limit_seconds": 5}
+          gates = {p: {"status": "UNKNOWN", "reason": "not reached"} for p in ("P1", "P2", "P3")}
+          facts = {}
+          current = "P1"
+          dir_created = False
+          unit_may_exist = False
+          standins = []
+          identities = {}
+          cg = None
+
+          class Reject(Exception):
+              def __init__(self, reason, status):
+                  self.reason = reason
+                  self.status = status
+
+          def require(condition, reason, status="UNKNOWN"):
+              if not condition:
+                  raise Reject(reason, status)
+
+          def call(argv, *, check=True):
+              return subprocess.run(argv, check=check, capture_output=True, text=True, timeout=6)
+
+          def systemd_state(target):
+              result = call(ctl + ["show", "--no-pager", "--property=" + ",".join(properties), target],
+                            check=False)
+              state = dict(line.split("=", 1) for line in result.stdout.splitlines() if "=" in line)
+              require(result.returncode == 0 or state.get("LoadState") == "not-found",
+                      "manager state unavailable")
+              return state
+
+          def snapshot():
+              data = {"schema": 1, "metadata": meta, "gates": gates, "observations": facts}
+              temp = evidence / "receipt.tmp"
+              temp.write_text(json.dumps(data, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+              temp.replace(evidence / "receipt.json")
+
+          def run_gate(status, reason):
+              gates[current] = {"status": status, "reason": reason}
+              snapshot()
+
+          def proc_identity(pid):
+              try:
+                  info = Path(f"/proc/{pid}/stat").read_text()
+              except FileNotFoundError:
+                  return None
+              fields = info.rsplit(") ", 1)[1].split()
+              return {"pid": pid, "ppid": int(fields[1]), "starttime": int(fields[19])}
+
+          def still_present(identity):
+              current_identity = proc_identity(identity["pid"])
+              return current_identity is not None and current_identity["starttime"] == identity["starttime"]
+
+          def members():
+              try:
+                  return sorted(int(pid) for pid in (cg / "cgroup.procs").read_text().split())
+              except FileNotFoundError:
+                  require(not cg.exists(), "membership file missing in live cgroup")
+                  return []
+
+          def population():
+              try:
+                  return dict(line.split() for line in (cg / "cgroup.events").read_text().splitlines())["populated"]
+              except FileNotFoundError:
+                  require(not cg.exists(), "events file missing in live cgroup")
+                  return "removed"
+
+          def picked_state():
+              return {key: value for key, value in systemd_state(unit).items() if key in properties}
+
+          # The service starts a trusted barrier wrapper. The artificial work,
+          # including creation of its sole child, starts after the release file.
+          worker = '''
+          import subprocess, sys, time
+          from pathlib import Path
+          release = Path(sys.argv[1])
+          until = time.monotonic() + 35
+          while not release.is_file():
+              if time.monotonic() >= until:
+                  raise SystemExit(78)
+              time.sleep(0.05)
+          child = subprocess.Popen([sys.executable, "-I", "-S", "-c", "import time; time.sleep(40)"])
+          child.wait(timeout=45)
+          '''
+
+          try:
+              snapshot()
+              meta.update(image_os=os.environ.get("ImageOS"), image_version=os.environ.get("ImageVersion"),
+                          kernel=os.uname().release)
+              os_release = Path("/etc/os-release").read_text()
+              require(bool(re.fullmatch(r"[0-9]+(?:\.[0-9]+)+", meta["expected_image"] or "")),
+                      "approved image missing")
+              require(bool(re.fullmatch(r"[a-f0-9]{40}", meta["workflow_sha"] or "")) and
+                      meta["workflow_sha"] == os.environ.get("APPROVED_WORKFLOW_SHA"),
+                      "workflow identity mismatch", "FAIL")
+              require(bool(meta["image_os"]) and bool(meta["image_version"]), "runner image metadata missing")
+              require(meta["image_os"] == "ubuntu24" and re.search(r'^ID="?ubuntu"?$', os_release, re.M)
+                      and re.search(r'^VERSION_ID="?24\.04"?$', os_release, re.M),
+                      "unexpected runner OS", "FAIL")
+              require(meta["image_version"] == meta["expected_image"], "runner image differs from approved image")
+              require(Path("/proc/1/comm").read_text().strip() == "systemd", "system manager is not PID 1")
+              facts["systemd_version"] = call(["/usr/bin/systemctl", "--version"]).stdout.splitlines()[0]
+              require(call(sudo + ["/usr/bin/id", "-u"]).stdout.strip() == "0", "noninteractive root unavailable")
+              require(any(parts[4] == str(cgroot) and parts[5].split(",")[0] == "rw" and
+                          line.split(" - ", 1)[1].split()[0] == "cgroup2"
+                          for line in Path("/proc/self/mountinfo").read_text().splitlines()
+                          if (parts := line.split()) and len(parts) > 6),
+                      "writable cgroup v2 mount unavailable")
+              require((cgroot / "cgroup.controllers").is_file(), "cgroup v2 controllers file missing")
+              require(systemd_state("system.slice").get("LoadState") == "loaded", "system slice unavailable")
+              require(systemd_state(unit).get("LoadState") == "not-found", "unit name already exists", "FAIL")
+              require(not gate.exists(), "release directory already exists", "FAIL")
+              require(os.geteuid() != 0, "unexpected privileged runner user")
+              run_gate("PASS", "approved runner, system manager, root access and cgroup mount observed")
+
+              current = "P2"
+              call(sudo + ["/usr/bin/mkdir", "-m", "0755", "--", str(gate)])
+              dir_created = True
+              # Cleanup and fallback are established before asking PID 1 to start the barrier.
+              service = {
+                  "Type": "exec", "User": "nobody", "Group": "nogroup",
+                  "Restart": "no", "RuntimeMaxSec": "30s", "TimeoutStartSec": "5s",
+                  "TimeoutStopSec": "3s", "KillMode": "control-group", "SendSIGKILL": "yes",
+                  "Delegate": "no", "ProtectControlGroups": "yes", "PrivateNetwork": "yes",
+                  "NoNewPrivileges": "yes", "ProtectSystem": "strict", "ProtectHome": "yes",
+                  "PrivateTmp": "yes", "TasksMax": "4", "UMask": "0077",
+              }
+              facts["requested_unit_properties"] = service
+              start = time.monotonic()
+              unit_may_exist = True
+              call(sudo + ["/usr/bin/systemd-run", "--quiet", "--unit=" + unit, "--slice=system.slice",
+                           *["--property=" + k + "=" + v for k, v in service.items()],
+                           "/usr/bin/python3", "-I", "-S", "-B", "-c", worker, str(release)])
+              state = picked_state()
+              facts["blocked_service"] = state
+              expected_group = "/system.slice/" + unit
+              require(state.get("ControlGroup") == expected_group, "unexpected cgroup", "FAIL")
+              cg = cgroot / expected_group.lstrip("/")
+              require(state.get("ActiveState") == "active" and state.get("User") == "nobody" and
+                      state.get("KillMode") == "control-group" and state.get("Restart") == "no" and
+                      all(state.get(k) == "yes" for k in
+                          ("SendSIGKILL", "PrivateNetwork", "NoNewPrivileges", "ProtectControlGroups")) and
+                      state.get("Delegate") == "no" and state.get("RuntimeMaxUSec") == "30s" and
+                      state.get("TimeoutStopUSec") == "3s" and state.get("TimeoutStartUSec") == "5s" and
+                      bool(re.fullmatch(r"[a-f0-9]{32}", state.get("InvocationID", ""))),
+                      "effective stop and containment settings differ")
+              require(stat.S_IMODE(gate.stat().st_mode) == 0o755 and gate.stat().st_uid == 0 and
+                      not release.exists(), "release barrier ownership or state invalid", "FAIL")
+              pid = int(state.get("MainPID", "0"))
+              require(pid > 1 and members() == [pid] and population() == "1", "barrier is not sole member", "FAIL")
+              worker_uid = int(call(["/usr/bin/id", "-u", "nobody"]).stdout.strip())
+              require(worker_uid > 0 and Path(f"/proc/{pid}/cgroup").read_text().strip() == "0::" + expected_group and
+                      Path(f"/proc/{pid}").stat().st_uid == worker_uid,
+                      "barrier identity or membership mismatch", "FAIL")
+              identities[pid] = proc_identity(pid)
+              require(identities[pid] is not None, "barrier disappeared")
+              require(time.monotonic() - start < 12, "insufficient time remains before manager timeout")
+              facts["barrier_identity"] = identities[pid]
+              run_gate("PASS", "parked service contained before artificial work, manager policy read back")
+
+              current = "P3"
+              facts["independent_stop_expected"] = "system_manager_runtime_timeout"
+              for role in ("audit_surrogate", "watchdog_surrogate"):
+                  standins.append((role, subprocess.Popen(
+                      [sys.executable, "-I", "-S", "-c", "import time; time.sleep(45)"],
+                      stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)))
+              require(all(p.poll() is None and
+                          Path(f"/proc/{p.pid}/cgroup").read_text().strip() != "0::" + expected_group
+                          for _, p in standins), "surrogates did not start outside target cgroup")
+              require(not release.exists() and members() == [pid] and time.monotonic() - start < 16,
+                      "pre-release gate no longer valid")
+              facts["release_monotonic"] = time.monotonic()
+              snapshot()
+              # Exclusive creation prevents a second release within this run.
+              call(sudo + ["/usr/bin/python3", "-I", "-S", "-c",
+                           "import os,sys; os.close(os.open(sys.argv[1],os.O_CREAT|os.O_EXCL|os.O_WRONLY,0o644))",
+                           str(release)])
+              until = start + 22
+              while time.monotonic() < until:
+                  pids = members()
+                  if len(pids) == 2 and pid in pids:
+                      child_pid = next(p for p in pids if p != pid)
+                      child = proc_identity(child_pid)
+                      if child and child["ppid"] == pid:
+                          identities[child_pid] = child
+                          break
+                  time.sleep(0.1)
+              require(len(identities) == 2, "artificial child not independently observed")
+              facts["workload_identities"] = list(identities.values())
+              for _, process in standins:
+                  process.kill()
+              facts["surrogate_outcomes"] = {role: {"pid": p.pid, "exit": p.wait(timeout=2)}
+                                             for role, p in standins}
+              require(all(x["exit"] == -9 for x in facts["surrogate_outcomes"].values()),
+                      "surrogate fail-stop not established")
+              require(set(members()) == set(identities), "payload left before double fail-stop could be confirmed")
+              facts["members_after_surrogate_death"] = list(identities)
+              facts["surrogate_deaths_observed_monotonic"] = time.monotonic()
+              snapshot()
+
+              # Observe only here. An explicit stop in this window would
+              # invalidate the independent-timeout result.
+              while time.monotonic() < start + 42:
+                  terminal = picked_state()
+                  if terminal.get("ActiveState") in ("inactive", "failed") and terminal.get("MainPID") == "0":
+                      facts["service_terminal"] = terminal
+                      facts["terminal_observed_monotonic"] = time.monotonic()
+                      break
+                  time.sleep(0.2)
+              require("service_terminal" in facts, "manager terminal state not observed")
+              require(facts["service_terminal"].get("InvocationID") == state["InvocationID"],
+                      "manager invocation could not be matched")
+              require(facts["service_terminal"].get("Result") == "timeout", "manager timeout not attributed", "FAIL")
+              facts["terminal_population"] = population()
+              facts["terminal_members"] = members()
+              require(facts["terminal_population"] in ("0", "removed") and not facts["terminal_members"] and
+                      all(not still_present(ident) for ident in identities.values()), "worker or child still present after timeout", "FAIL")
+              run_gate("PASS", "manager timeout after both surrogate deaths and zero residual observed")
+          except Reject as err:
+              run_gate(err.status, err.reason)
+          except (OSError, ValueError, KeyError, subprocess.SubprocessError) as err:
+              run_gate("UNKNOWN", type(err).__name__)
+          finally:
+              faults = []
+              for role, process in standins:
+                  try:
+                      if process.poll() is None:
+                          process.kill()
+                      process.wait(timeout=2)
+                  except (OSError, subprocess.SubprocessError) as err:
+                      faults.append(role + ":" + type(err).__name__)
+              recovery = []
+              if dir_created:
+                  recovery.append(("close_barrier", sudo + ["/usr/bin/rm", "-f", "--", str(release)]))
+              if unit_may_exist:
+                  recovery.append(("stop_unit", ctl + ["stop", unit]))
+              if dir_created:
+                  recovery.append(("remove_gate", sudo + ["/usr/bin/rmdir", "--", str(gate)]))
+              for label, command in recovery:
+                  try:
+                      call(command)
+                  except (OSError, subprocess.SubprocessError) as err:
+                      faults.append(label + ":" + type(err).__name__)
+              try:
+                  if unit_may_exist:
+                      end = picked_state()
+                      facts["recovery_unit"] = end
+                      expected_path = cgroot / "system.slice" / unit
+                      if end.get("LoadState") != "not-found" and (
+                          end.get("ActiveState") not in ("inactive", "failed") or end.get("MainPID") != "0"
+                      ):
+                          faults.append("unit_not_terminal")
+                      if any(still_present(ident) for ident in identities.values() if ident is not None):
+                          faults.append("known_process_still_present")
+                      if expected_path.exists():
+                          events = dict(line.split() for line in (expected_path / "cgroup.events").read_text().splitlines())
+                          if events.get("populated") != "0":
+                              faults.append("cgroup_not_empty")
+              except (Reject, OSError, ValueError, subprocess.SubprocessError) as err:
+                  faults.append("recovery_readback:" + type(err).__name__)
+              facts["recovery_faults"] = faults
+              facts["overall"] = ("LIMITED_SYNTHETIC_PASS" if not faults and
+                                  all(g["status"] == "PASS" for g in gates.values())
+                                  else "PREEXEC_GATE_INCOMPLETE" if gates["P2"]["status"] != "PASS"
+                                  else "UNKNOWN_STOP" if faults or any(g["status"] == "UNKNOWN" for g in gates.values())
+                                  else "FAIL")
+              snapshot()
+          raise SystemExit(0 if facts["overall"] == "LIMITED_SYNTHETIC_PASS" else 1)
+          PY
+      - name: Preserve bounded evidence for independent readback
+        if: ${{ always() }}
+        timeout-minutes: 1
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: mf2-phase2-precheck-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/mf2-phase2-evidence/receipt.json
+          if-no-files-found: error
+          retention-days: 7
