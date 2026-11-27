@@ -114,6 +114,26 @@ def claim(manifest, *, request=github_request, runner_version=None):
     require(status == 200, "approval history GET unavailable")
     check_history(reviews, approval_message(manifest))
 
+    # Read-only P1 prerequisite check after owner approval, BEFORE any tag lookup/POST.
+    # An absent prerequisite fails closed; the formal P1/P2/P3 remains unchanged.
+    # Prevent import-generated __pycache__ writes before the preclaim helper loads.
+    sys.dont_write_bytecode = True
+    from method_c_phase2_preclaim_p1 import PreclaimHold, verify
+    try:
+        observed = verify(manifest, runner_version=runner_version)
+    except PreclaimHold as err:
+        print("PHASE2_PRECLAIM_P1_HOLD run_id=" + str(manifest["run_id"])
+              + " sha=" + manifest["workflow_sha"]
+              + " approved_image=" + manifest["approved_image_version"]
+              + " measured_image=" + str(runner_version)
+              + " capability=HOLD reason=" + str(err), file=sys.stderr)
+        raise Hold("preclaim P1: " + str(err)) from None
+    print("PHASE2_PRECLAIM_P1_PASS run_id=" + str(manifest["run_id"])
+          + " sha=" + observed["workflow_sha"]
+          + " approved_image=" + observed["approved_image"]
+          + " measured_image=" + observed["measured_image"]
+          + " capability=" + observed["capability"])
+
     ref_path = "/git/ref/" + REF.removeprefix("refs/")
     status, existing = request("GET", ref_path)
     require(status == 404, "tag exists or absence cannot be established")
