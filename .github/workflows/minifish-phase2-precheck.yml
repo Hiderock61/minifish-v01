@@ -7,10 +7,6 @@ name: MiniFish 2 phase 2 synthetic precheck (locked draft)
         description: Separately approved full workflow commit SHA
         required: true
         type: string
-      approved_image_version:
-        description: Separately approved exact ubuntu-24.04 runner image version
-        required: true
-        type: string
 
 permissions: {}
 
@@ -25,7 +21,6 @@ jobs:
     env:
       APPROVED_WORKFLOW_SHA: ${{ inputs.approved_workflow_sha }}
       ACTUAL_WORKFLOW_SHA: ${{ github.workflow_sha }}
-      APPROVED_IMAGE_VERSION: ${{ inputs.approved_image_version }}
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
@@ -46,7 +41,6 @@ jobs:
     env:
       APPROVED_WORKFLOW_SHA: ${{ inputs.approved_workflow_sha }}
       ACTUAL_WORKFLOW_SHA: ${{ github.workflow_sha }}
-      APPROVED_IMAGE_VERSION: ${{ inputs.approved_image_version }}
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
@@ -60,13 +54,15 @@ jobs:
         if: ${{ success() && steps.claim.outputs.acquired == 'true' }}
         shell: bash
         timeout-minutes: 2
+        env:
+          PRECLAIM_EVIDENCE: ${{ steps.claim.outputs.preclaim_evidence }}
         run: |
           set -euo pipefail
-          install -d -m 0700 "$RUNNER_TEMP/mf2-phase2-evidence"
-          /usr/bin/python3 -I -S - "$RUNNER_TEMP/mf2-phase2-evidence" <<'PY'
+          /usr/bin/python3 -I -S -B - "$RUNNER_TEMP/mf2-phase2-evidence" <<'PY'
           import json
           import os
           import re
+          import runpy
           import stat
           import subprocess
           import sys
@@ -90,13 +86,13 @@ jobs:
               "InvocationID", "TimeoutStartUSec",
               "Restart", "Delegate", "SendSIGKILL", "NoNewPrivileges",
               "PrivateNetwork", "ProtectControlGroups", "ExecMainCode", "ExecMainStatus",
+              "Type", "Group", "ProtectSystem", "ProtectHome", "PrivateTmp", "TasksMax", "UMask",
           )
-          meta = {"run_id": run_id, "attempt": attempt, "unit": unit,
-                  "repository": os.environ.get("GITHUB_REPOSITORY"),
-                  "workflow_sha": os.environ.get("ACTUAL_WORKFLOW_SHA"),
-                  "expected_image": os.environ.get("APPROVED_IMAGE_VERSION"),
-                  "runtime_limit_seconds": 30, "stop_grace_seconds": 3,
-                  "start_limit_seconds": 5}
+          meta = {
+              "run_id": run_id, "attempt": attempt, "unit": unit,
+              "repository": os.environ.get("GITHUB_REPOSITORY"),
+              "workflow_sha": os.environ.get("ACTUAL_WORKFLOW_SHA"),
+          }
           gates = {p: {"status": "UNKNOWN", "reason": "not reached"} for p in ("P1", "P2", "P3")}
           facts = {}
           current = "P1"
@@ -122,12 +118,13 @@ jobs:
               result = call(ctl + ["show", "--no-pager", "--property=" + ",".join(properties), target],
                             check=False)
               state = dict(line.split("=", 1) for line in result.stdout.splitlines() if "=" in line)
-              require(result.returncode == 0 or state.get("LoadState") == "not-found",
+              require(bool(state.get("LoadState")) and
+                      (result.returncode == 0 or state["LoadState"] == "not-found"),
                       "manager state unavailable")
               return state
 
           def snapshot():
-              data = {"schema": 1, "metadata": meta, "gates": gates, "observations": facts}
+              data = {"schema": 2, "metadata": meta, "gates": gates, "observations": facts}
               temp = evidence / "receipt.tmp"
               temp.write_text(json.dumps(data, indent=2, sort_keys=True) + "\n", encoding="utf-8")
               temp.replace(evidence / "receipt.json")
@@ -180,48 +177,38 @@ jobs:
           child.wait(timeout=45)
           '''
 
-          try:
-              snapshot()
-              meta.update(image_os=os.environ.get("ImageOS"), image_version=os.environ.get("ImageVersion"),
-                          kernel=os.uname().release)
-              os_release = Path("/etc/os-release").read_text()
-              require(bool(re.fullmatch(r"[0-9]+(?:\.[0-9]+)+", meta["expected_image"] or "")),
-                      "approved image missing")
-              require(bool(re.fullmatch(r"[a-f0-9]{40}", meta["workflow_sha"] or "")) and
-                      meta["workflow_sha"] == os.environ.get("APPROVED_WORKFLOW_SHA"),
-                      "workflow identity mismatch", "FAIL")
-              require(bool(meta["image_os"]) and bool(meta["image_version"]), "runner image metadata missing")
-              require(meta["image_os"] == "ubuntu24" and re.search(r'^ID="?ubuntu"?$', os_release, re.M)
-                      and re.search(r'^VERSION_ID="?24\.04"?$', os_release, re.M),
-                      "unexpected runner OS", "FAIL")
-              require(meta["image_version"] == meta["expected_image"], "runner image differs from approved image")
-              require(Path("/proc/1/comm").read_text().strip() == "systemd", "system manager is not PID 1")
-              facts["systemd_version"] = call(["/usr/bin/systemctl", "--version"]).stdout.splitlines()[0]
-              require(call(sudo + ["/usr/bin/id", "-u"]).stdout.strip() == "0", "noninteractive root unavailable")
-              require(any(parts[4] == str(cgroot) and parts[5].split(",")[0] == "rw" and
-                          line.split(" - ", 1)[1].split()[0] == "cgroup2"
-                          for line in Path("/proc/self/mountinfo").read_text().splitlines()
-                          if (parts := line.split()) and len(parts) > 6),
-                      "writable cgroup v2 mount unavailable")
-              require((cgroot / "cgroup.controllers").is_file(), "cgroup v2 controllers file missing")
-              require(systemd_state("system.slice").get("LoadState") == "loaded", "system slice unavailable")
-              require(systemd_state(unit).get("LoadState") == "not-found", "unit name already exists", "FAIL")
-              require(not gate.exists(), "release directory already exists", "FAIL")
-              require(os.geteuid() != 0, "unexpected privileged runner user")
-              run_gate("PASS", "approved runner, system manager, root access and cgroup mount observed")
+          def check_p1():
+              scripts = Path(os.environ["GITHUB_WORKSPACE"]) / ".github" / "scripts"
+              contract = runpy.run_path(str(scripts / "method_c_phase2_gate.py"))
+              probe = runpy.run_path(str(scripts / "method_c_phase2_preclaim_p1.py"))
+              try:
+                  manifest = contract["fixed_context"](os.environ)
+                  meta["approval_contract"] = manifest
+                  before = json.loads(os.environ["PRECLAIM_EVIDENCE"])
+                  contract["check_preclaim_evidence"](manifest, before)
+                  facts["preclaim_p1"] = before
+                  facts["formal_p1"] = probe["verify"](manifest)
+                  return manifest["safety_policy"]["service"]
+              except (contract["Hold"], probe["PreclaimHold"]) as err:
+                  raise Reject(str(err), "UNKNOWN") from err
 
+          try:
+              service = check_p1()
+          except (Reject, OSError, ValueError, KeyError) as err:
+              gates["P1"]["reason"] = str(err) if isinstance(err, Reject) else type(err).__name__
+              facts["overall"] = "PREEXEC_GATE_INCOMPLETE"
+          else:
+              gates["P1"] = {"status": "PASS", "reason": "preclaim evidence matched and capabilities re-observed"}
+          evidence.mkdir(mode=0o700)
+          snapshot()
+          if gates["P1"]["status"] != "PASS":
+              raise SystemExit(1)
+
+          try:
               current = "P2"
               call(sudo + ["/usr/bin/mkdir", "-m", "0755", "--", str(gate)])
               dir_created = True
               # Cleanup and fallback are established before asking PID 1 to start the barrier.
-              service = {
-                  "Type": "exec", "User": "nobody", "Group": "nogroup",
-                  "Restart": "no", "RuntimeMaxSec": "30s", "TimeoutStartSec": "5s",
-                  "TimeoutStopSec": "3s", "KillMode": "control-group", "SendSIGKILL": "yes",
-                  "Delegate": "no", "ProtectControlGroups": "yes", "PrivateNetwork": "yes",
-                  "NoNewPrivileges": "yes", "ProtectSystem": "strict", "ProtectHome": "yes",
-                  "PrivateTmp": "yes", "TasksMax": "4", "UMask": "0077",
-              }
               facts["requested_unit_properties"] = service
               start = time.monotonic()
               unit_may_exist = True
@@ -233,12 +220,11 @@ jobs:
               expected_group = "/system.slice/" + unit
               require(state.get("ControlGroup") == expected_group, "unexpected cgroup", "FAIL")
               cg = cgroot / expected_group.lstrip("/")
-              require(state.get("ActiveState") == "active" and state.get("User") == "nobody" and
-                      state.get("KillMode") == "control-group" and state.get("Restart") == "no" and
-                      all(state.get(k) == "yes" for k in
-                          ("SendSIGKILL", "PrivateNetwork", "NoNewPrivileges", "ProtectControlGroups")) and
-                      state.get("Delegate") == "no" and state.get("RuntimeMaxUSec") == "30s" and
-                      state.get("TimeoutStopUSec") == "3s" and state.get("TimeoutStartUSec") == "5s" and
+              readback_keys = {"RuntimeMaxSec": "RuntimeMaxUSec",
+                               "TimeoutStopSec": "TimeoutStopUSec",
+                               "TimeoutStartSec": "TimeoutStartUSec"}
+              require(state.get("LoadState") == "loaded" and state.get("ActiveState") == "active" and
+                      all(state.get(readback_keys.get(key, key)) == value for key, value in service.items()) and
                       bool(re.fullmatch(r"[a-f0-9]{32}", state.get("InvocationID", ""))),
                       "effective stop and containment settings differ")
               require(stat.S_IMODE(gate.stat().st_mode) == 0o755 and gate.stat().st_uid == 0 and

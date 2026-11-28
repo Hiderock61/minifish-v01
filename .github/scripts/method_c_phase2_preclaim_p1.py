@@ -19,9 +19,9 @@ def require(condition, reason):
         raise PreclaimHold(reason)
 
 
-def verify(manifest, *, runner_version, env=None, read_text=None, lstat=None,
+def verify(manifest, *, env=None, read_text=None, lstat=None,
            is_file=None, is_dir=None, geteuid=None, command=None):
-    """Inspect the SAME claim runner without changing any runner state.
+    """Inspect the claim runner against the approved read-only P1 conditions.
 
     Injected accessors allow entirely synthetic tests without real sudo/systemd.
     """
@@ -37,19 +37,22 @@ def verify(manifest, *, runner_version, env=None, read_text=None, lstat=None,
                               text=True, timeout=5)
     command = default_command if command is None else command
 
-    expected = manifest["approved_image_version"]
-    actual = env.get("ImageVersion")
-    require(bool(re.fullmatch(r"[0-9]+(?:\.[0-9]+)+", expected)),
-            "approved image malformed")
-    require(runner_version == actual == expected, "concrete runner image mismatch")
-    require(env.get("ImageOS") == "ubuntu24", "unexpected image OS")
+    policy = manifest["safety_policy"]
+    runner_environment = env.get("RUNNER_ENVIRONMENT")
+    require(runner_environment == policy["runner_environment"], "unexpected runner environment")
+    image_os = env.get("ImageOS")
+    require(image_os == policy["image_os"], "unexpected image OS")
+    image_version = env.get("ImageVersion", "")
+    require(image_version.strip() and image_version.isprintable(), "image version evidence missing or malformed")
+    kernel = os.uname().release
+    require(kernel.strip() and kernel.isprintable(), "kernel evidence missing or malformed")
     release = read_text("/etc/os-release")
-    require(bool(re.search(r'^ID="?ubuntu"?$', release, re.M))
-            and bool(re.search(r'^VERSION_ID="?24\.04"?$', release, re.M)),
-            "unexpected OS release")
+    for key, expected in (("ID", policy["os_id"]), ("VERSION_ID", policy["os_version"])):
+        values = re.findall(rf"^{key}=(.*)$", release, re.M)
+        require(values in ([expected], [f'"{expected}"']), "unexpected OS release")
     require(read_text("/proc/1/comm").strip() == "systemd", "PID 1 is not systemd")
     require(geteuid() != 0, "runner unexpectedly privileged")
-    require(env.get("GITHUB_RUN_ATTEMPT") == "1", "not first attempt")
+    require(env.get("GITHUB_RUN_ATTEMPT") == str(manifest["run_attempt"]), "not first attempt")
     require(env.get("GITHUB_RUN_ID") == str(manifest["run_id"]), "run identity mismatch")
     require(env.get("GITHUB_REPOSITORY") == manifest["repository"], "repository mismatch")
     require(env.get("ACTUAL_WORKFLOW_SHA") == manifest["workflow_sha"]
@@ -115,9 +118,8 @@ def verify(manifest, *, runner_version, env=None, read_text=None, lstat=None,
     require(systemd_state("system.slice") == "loaded", "system slice unavailable")
     require(systemd_state(unit) == "not-found", "target unit already exists")
 
-    # Evidence is logged to GitHub's immutable job log by the invoking gate.
-    # No filesystem write, POST, systemctl start/stop, or process spawn of worker.
-    return {"run_id": run_id, "workflow_sha": manifest["workflow_sha"],
-            "approved_image": expected, "measured_image": actual,
+    return {"run_id": manifest["run_id"], "workflow_sha": manifest["workflow_sha"],
+            "runner_environment": runner_environment, "image_os": image_os,
+            "image_version": image_version, "kernel": kernel,
             "systemd": systemctl_version.stdout.splitlines()[0],
             "unit_empty": True, "work_area_empty": True, "capability": "PASS"}

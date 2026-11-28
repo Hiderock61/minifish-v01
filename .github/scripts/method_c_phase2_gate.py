@@ -19,6 +19,28 @@ ENVIRONMENT = "mf2-method-c-claim-qa"
 WORKFLOW = ".github/workflows/minifish-phase2-precheck.yml"
 REF = "refs/tags/minifish-method-c/claimed/phase2-precheck-01"
 SCOPE = "ONE synthetic P1/P2/P3 precheck only; no Chromium or external web job"
+SAFETY_POLICY = {
+    "version": "safety-property-v0.1",
+    "runner_environment": "github-hosted",
+    "image_os": "ubuntu24",
+    "os_id": "ubuntu",
+    "os_version": "24.04",
+    "p1": "Unprivileged runner, PID 1 systemd, noninteractive root probe, writable "
+          "cgroup v2, loaded system.slice, absent target unit and free work areas; "
+          "record image version and kernel as audit evidence",
+    "p2": "Read back effective service settings and verify the sole unprivileged "
+          "barrier process in its dedicated cgroup before releasing synthetic work",
+    "service": {
+        "Type": "exec", "User": "nobody", "Group": "nogroup",
+        "Restart": "no", "RuntimeMaxSec": "30s", "TimeoutStartSec": "5s",
+        "TimeoutStopSec": "3s", "KillMode": "control-group", "SendSIGKILL": "yes",
+        "Delegate": "no", "ProtectControlGroups": "yes", "PrivateNetwork": "yes",
+        "NoNewPrivileges": "yes", "ProtectSystem": "strict", "ProtectHome": "yes",
+        "PrivateTmp": "yes", "TasksMax": "4", "UMask": "0077",
+    },
+    "p3": "After both surrogate deaths, observe timeout of the same systemd invocation, "
+          "an empty or removed cgroup, no surviving workload identities and successful cleanup",
+}
 
 
 class Hold(Exception):
@@ -45,15 +67,14 @@ def fixed_context(env):
     approved_sha = env.get("APPROVED_WORKFLOW_SHA", "")
     require(bool(re.fullmatch(r"[0-9a-f]{40}", source)) and source == workflow_sha
             and source == approved_sha, "source/workflow identity mismatch")
-    image = env.get("APPROVED_IMAGE_VERSION", "")
-    require(bool(re.fullmatch(r"[0-9]+(?:\.[0-9]+)+", image)), "invalid image version")
     return {
         "repository": REPO,
         "environment": ENVIRONMENT,
         "workflow": WORKFLOW,
         "run_id": int(run_id),
+        "run_attempt": 1,
         "workflow_sha": source,
-        "approved_image_version": image,
+        "safety_policy": SAFETY_POLICY,
         "claim_ref": REF,
         "scope": SCOPE,
     }
@@ -106,33 +127,48 @@ def github_request(method, endpoint, payload=None):
         connection.close()
 
 
-def claim(manifest, *, request=github_request, runner_version=None):
-    # Refuse before creating any ref if the concrete claim runner is not approved.
-    require(runner_version == manifest["approved_image_version"],
-            "claim runner image does not match approved version")
+def check_preclaim_evidence(manifest, evidence):
+    require(isinstance(evidence, dict), "missing preclaim evidence")
+    policy = manifest["safety_policy"]
+    require(evidence.get("approval") == approval_message(manifest)
+            and evidence.get("run_id") == manifest["run_id"]
+            and evidence.get("workflow_sha") == manifest["workflow_sha"],
+            "preclaim evidence identity mismatch")
+    require(evidence.get("capability") == "PASS"
+            and evidence.get("runner_environment") == policy["runner_environment"]
+            and evidence.get("image_os") == policy["image_os"]
+            and evidence.get("unit_empty") is True
+            and evidence.get("work_area_empty") is True,
+            "preclaim capability evidence incomplete")
+    for field in ("image_version", "kernel", "systemd"):
+        value = evidence.get(field)
+        require(isinstance(value, str) and value.strip() and value.isprintable(),
+                "missing or malformed preclaim evidence: " + field)
+
+
+def claim(manifest, *, out, request=github_request):
+    approval = approval_message(manifest)
     status, reviews = request("GET", "/actions/runs/" + str(manifest["run_id"]) + "/approvals")
     require(status == 200, "approval history GET unavailable")
-    check_history(reviews, approval_message(manifest))
+    check_history(reviews, approval)
 
     # Read-only P1 prerequisite check after owner approval, BEFORE any tag lookup/POST.
-    # An absent prerequisite fails closed; the formal P1/P2/P3 remains unchanged.
     # Prevent import-generated __pycache__ writes before the preclaim helper loads.
     sys.dont_write_bytecode = True
     from method_c_phase2_preclaim_p1 import PreclaimHold, verify
     try:
-        observed = verify(manifest, runner_version=runner_version)
+        evidence = verify(manifest)
     except PreclaimHold as err:
         print("PHASE2_PRECLAIM_P1_HOLD run_id=" + str(manifest["run_id"])
               + " sha=" + manifest["workflow_sha"]
-              + " approved_image=" + manifest["approved_image_version"]
-              + " measured_image=" + str(runner_version)
               + " capability=HOLD reason=" + str(err), file=sys.stderr)
         raise Hold("preclaim P1: " + str(err)) from None
-    print("PHASE2_PRECLAIM_P1_PASS run_id=" + str(manifest["run_id"])
-          + " sha=" + observed["workflow_sha"]
-          + " approved_image=" + observed["approved_image"]
-          + " measured_image=" + observed["measured_image"]
-          + " capability=" + observed["capability"])
+    evidence["approval"] = approval
+    check_preclaim_evidence(manifest, evidence)
+    encoded = json.dumps(evidence, sort_keys=True, separators=(",", ":"))
+    out.write("preclaim_evidence=" + encoded + "\n")
+    out.flush()
+    print("PHASE2_PRECLAIM_P1_PASS " + encoded, flush=True)
 
     ref_path = "/git/ref/" + REF.removeprefix("refs/")
     status, existing = request("GET", ref_path)
@@ -158,9 +194,11 @@ def claim(manifest, *, request=github_request, runner_version=None):
     require(status == 200 and isinstance(observed, dict)
             and observed.get("ref") == REF
             and isinstance(observed.get("object"), dict)
+            and observed["object"].get("type") == "commit"
             and observed["object"].get("sha") == manifest["workflow_sha"],
             "claim readback unavailable; no retry")
-    return True
+    out.write("acquired=true\n")
+    out.flush()
 
 
 def main():
@@ -172,14 +210,14 @@ def main():
                 print("## Single-run Phase 2 synthetic precheck review\n", file=out)
                 print("Run: " + str(manifest["run_id"]) + "", file=out)
                 print("SHA: " + manifest["workflow_sha"] + "", file=out)
-                print("Image version: " + manifest["approved_image_version"] + "", file=out)
                 print("Scope: " + SCOPE + "\n", file=out)
+                print("Safety policy (runner image version is audit evidence):\n\n```json", file=out)
+                print(json.dumps(manifest["safety_policy"], indent=2, sort_keys=True), file=out)
+                print("```\n", file=out)
                 print("Approve with exact comment: " + approval_message(manifest) + "", file=out)
         else:
-            require(claim(manifest, runner_version=os.environ.get("ImageVersion")),
-                    "claim failed")
             with Path(os.environ["GITHUB_OUTPUT"]).open("a", encoding="ascii") as out:
-                out.write("acquired=true\n")
+                claim(manifest, out=out)
             print("PHASE2_CLAIM_ACCEPTED run_id=" + str(manifest["run_id"]))
     except (Hold, OSError, ValueError, KeyError, TimeoutError) as err:
         print("PHASE2_CLAIM_HOLD: " + str(err), file=sys.stderr)
